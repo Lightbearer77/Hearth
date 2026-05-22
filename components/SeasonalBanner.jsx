@@ -3,16 +3,18 @@ import { COLORS, FONTS } from '../lib/theme';
 import { fmtGreg } from '../lib/constants';
 import { ASATRU_HOLIDAYS } from '../lib/holidays';
 
-export default function SeasonalBanner({ meta, year, onPrev, onNext, onToday }) {
+export default function SeasonalBanner({
+  meta, year, viewMode, onSetViewMode,
+  onPrev, onNext, onToday,
+}) {
   const { name, letter, theme, range } = meta;
-  const holidayCount = ASATRU_HOLIDAYS.filter(h => {
-    const matchMap = {
-      'Alpha':'M01','Beta':'M02','Gamma':'M03','Delta':'M04','Epsilon':'M05',
-      'Zeta':'M06','Eta':'M07','Theta':'M08','Iota':'M09','Kappa':'M10',
-      'Lambda':'M11','Mu':'M12','Nu':'M13','Planning Day':'PLANNING',
-    };
-    return h.greekMonth === matchMap[name];
-  }).length;
+
+  const matchMap = {
+    'Alpha':'M01','Beta':'M02','Gamma':'M03','Delta':'M04','Epsilon':'M05',
+    'Zeta':'M06','Eta':'M07','Theta':'M08','Iota':'M09','Kappa':'M10',
+    'Lambda':'M11','Mu':'M12','Nu':'M13','Planning Day':'PLANNING',
+  };
+  const holidayCount = ASATRU_HOLIDAYS.filter(h => h.greekMonth === matchMap[name]).length;
 
   return (
     <View style={[styles.container, { backgroundColor: `${theme.color}1a` }]}>
@@ -49,14 +51,50 @@ export default function SeasonalBanner({ meta, year, onPrev, onNext, onToday }) 
           )}
         </Text>
       </View>
+
+      <View style={styles.toggleRow}>
+        <View style={styles.toggleGroup}>
+          <ToggleBtn
+            active={viewMode === 'month'}
+            onPress={() => onSetViewMode('month')}
+            color={theme.color}
+            label="MONTH"
+          />
+          <ToggleBtn
+            active={viewMode === 'agenda'}
+            onPress={() => onSetViewMode('agenda')}
+            color={theme.color}
+            label="AGENDA"
+          />
+        </View>
+      </View>
     </View>
+  );
+}
+
+function ToggleBtn({ active, onPress, color, label }) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={[
+        styles.toggleBtn,
+        { backgroundColor: active ? `${color}28` : 'transparent' },
+      ]}
+    >
+      <Text style={[
+        styles.toggleBtnText,
+        { color: active ? color : COLORS.textMuted },
+      ]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     paddingTop: 16,
-    paddingBottom: 14,
+    paddingBottom: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderSubtle,
@@ -65,7 +103,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   navBtn: {
     width: 36, height: 36,
@@ -94,7 +132,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: FONTS.display,
     letterSpacing: 3,
-    marginBottom: 4,
+    marginBottom: 3,
     opacity: 0.9,
   },
   nameRow: {
@@ -102,13 +140,13 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
   },
   letter: {
-    fontSize: 38,
+    fontSize: 36,
     fontFamily: FONTS.display,
     fontWeight: '600',
     marginRight: 10,
   },
   name: {
-    fontSize: 38,
+    fontSize: 36,
     fontFamily: FONTS.display,
     fontWeight: '500',
     color: COLORS.textPrimary,
@@ -125,7 +163,31 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: FONTS.mono,
     color: COLORS.textFaint,
-    marginTop: 6,
+    marginTop: 5,
     letterSpacing: 1,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  toggleGroup: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.bgSurface,
+    borderWidth: 1,
+    borderColor: COLORS.borderMid,
+    borderRadius: 4,
+    padding: 2,
+  },
+  toggleBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: 3,
+    marginHorizontal: 1,
+  },
+  toggleBtnText: {
+    fontSize: 10,
+    fontFamily: FONTS.mono,
+    letterSpacing: 2,
   },
 });
