@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONTS } from '../lib/theme';
 import { greekMonthDays, gregToGreek, fmtGreg } from '../lib/constants';
 import { ASATRU_HOLIDAYS, remindersForDate } from '../lib/holidays';
@@ -9,6 +10,7 @@ export default function AgendaView({
   monthId, year, themeColor, events, categories,
   onDayClick, onEventClick, today,
 }) {
+  const insets = useSafeAreaInsets();
   const days = useMemo(() => greekMonthDays(monthId, year), [monthId, year]);
 
   const agenda = useMemo(() => {
@@ -44,7 +46,7 @@ export default function AgendaView({
 
   if (agenda.length === 0) {
     return (
-      <View style={styles.emptyContainer}>
+      <View style={[styles.emptyContainer, { paddingBottom: insets.bottom + 60 }]}>
         <Text style={styles.emptyTitle}>Empty month.</Text>
         <Text style={styles.emptyBody}>
           No holidays, reminders, or events this month.{'\n'}
@@ -55,7 +57,10 @@ export default function AgendaView({
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 48 }]}
+    >
       {agenda.map(entry => (
         <DayBlock
           key={entry.isoDate}
@@ -214,7 +219,7 @@ function EventItem({ event, categories, onPress }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: 12, paddingBottom: 40 },
+  content: { padding: 12 },
 
   emptyContainer: {
     paddingVertical: 60,
