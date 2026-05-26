@@ -148,7 +148,13 @@ export default function SettingsModal({ onClose, onCategoriesChanged }) {
                   styles.statusValue,
                   { color: notifStatus === 'granted' ? COLORS.g2 : COLORS.textMuted },
                 ]}>
-                  {notifStatus === 'granted' ? 'Enabled' : notifStatus === 'denied' ? 'Denied' : 'Not yet enabled'}
+                  {notifStatus === 'granted'
+                    ? 'Enabled'
+                    : notifStatus === 'denied'
+                      ? 'Denied'
+                      : notifStatus === 'unavailable'
+                        ? 'Expo Go — session 4'
+                        : 'Not yet enabled'}
                 </Text>
               </View>
               {notifStatus === 'granted' && (
@@ -159,7 +165,13 @@ export default function SettingsModal({ onClose, onCategoriesChanged }) {
               )}
             </View>
 
-            {notifStatus !== 'granted' ? (
+            {notifStatus === 'unavailable' ? (
+              <View style={[styles.secondaryBtn, { opacity: 0.6 }]}>
+                <Text style={styles.secondaryBtnText}>
+                  REQUIRES CUSTOM DEV BUILD
+                </Text>
+              </View>
+            ) : notifStatus !== 'granted' ? (
               <TouchableOpacity
                 onPress={handleEnableNotifications}
                 disabled={busy}
