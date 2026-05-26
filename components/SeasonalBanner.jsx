@@ -5,7 +5,7 @@ import { ASATRU_HOLIDAYS } from '../lib/holidays';
 
 export default function SeasonalBanner({
   meta, year, viewMode, onSetViewMode,
-  onPrev, onNext, onToday,
+  onPrev, onNext, onToday, onOpenSettings,
 }) {
   const { name, letter, theme, range } = meta;
 
@@ -18,6 +18,7 @@ export default function SeasonalBanner({
 
   return (
     <View style={[styles.container, { backgroundColor: `${theme.color}1a` }]}>
+      {/* Nav row */}
       <View style={styles.navRow}>
         <TouchableOpacity onPress={onPrev} style={styles.navBtn}>
           <Text style={styles.navBtnText}>‹</Text>
@@ -29,6 +30,11 @@ export default function SeasonalBanner({
 
         <TouchableOpacity onPress={onNext} style={styles.navBtn}>
           <Text style={styles.navBtnText}>›</Text>
+        </TouchableOpacity>
+
+        {/* Settings gear — top right corner */}
+        <TouchableOpacity onPress={onOpenSettings} style={styles.gearBtn}>
+          <Text style={styles.gearBtnText}>⚙</Text>
         </TouchableOpacity>
       </View>
 
@@ -126,6 +132,16 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.mono,
     color: COLORS.textMuted,
     letterSpacing: 2,
+  },
+  gearBtn: {
+    position: 'absolute',
+    right: 0,
+    width: 36, height: 36,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  gearBtnText: {
+    fontSize: 22,
+    color: COLORS.textMuted,
   },
   titleArea: { alignItems: 'center' },
   themeLabel: {
