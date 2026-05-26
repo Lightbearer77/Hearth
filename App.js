@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { View, StatusBar, StyleSheet, PanResponder } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Font from 'expo-font';
 
 import { COLORS } from './lib/theme';
 import {
@@ -13,12 +14,16 @@ import {
   saveEvent as dbSaveEvent, deleteEvent as dbDeleteEvent,
   newEvent,
 } from './lib/storage';
+import {
+  getPermissionStatus, scheduleAllHolidayNotifications,
+} from './lib/notifications';
 
 import SeasonalBanner from './components/SeasonalBanner';
 import MonthView from './components/MonthView';
 import AgendaView from './components/AgendaView';
 import DayDetail from './components/DayDetail';
 import EventModal from './components/EventModal';
+import SettingsModal from './components/SettingsModal';
 
 function AppContent() {
   const insets = useSafeAreaInsets();
@@ -33,17 +38,39 @@ function AppContent() {
   const [ready, setReady] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [editingEvent, setEditingEvent] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
 
-  // ─── Init database, load data ───
+  // ─── Init: load fonts, database, data, refresh notifications ───
   useEffect(() => {
     (async () => {
       try {
+        // Load fonts — won't crash if files missing, just uses fallback
+        try {
+          await Font.loadAsync({
+            CormorantGaramond: require('./assets/fonts/CormorantGaramond-Regular.ttf'),
+            Spectral:          require('./assets/fonts/Spectral-Regular.ttf'),
+          });
+        } catch (fontErr) {
+          // Fonts not present yet — fallback to system serif. App still works.
+          console.log('Custom fonts not loaded (will use system fallback):', fontErr?.message);
+        }
+
         await initDatabase();
         const [evts, cats] = await Promise.all([getAllEvents(), getAllCategories()]);
         setEvents(evts);
         setCategories(cats);
+
+        // Refresh notifications on launch if permission already granted
+        try {
+          const status = await getPermissionStatus();
+          if (status === 'granted') {
+            await scheduleAllHolidayNotifications();
+          }
+        } catch (notifErr) {
+          console.log('Notification refresh skipped:', notifErr?.message);
+        }
       } catch (e) {
-        console.warn('DB init failed', e);
+        console.warn('Init failed', e);
       } finally {
         setReady(true);
       }
@@ -87,6 +114,12 @@ function AppContent() {
     setEditingEvent(newEvent({ date: isoDate }));
   };
 
+  // ─── Categories refresh hook ───
+  const refreshCategories = useCallback(async () => {
+    const cats = await getAllCategories();
+    setCategories(cats);
+  }, []);
+
   // ─── Swipe handling ───
   const panResponder = useRef(
     PanResponder.create({
@@ -124,7 +157,7 @@ function AppContent() {
 
   return (
     <View
-      style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
+      style={[styles.container, { paddingTop: insets.top }]}
       {...panResponder.panHandlers}
     >
       <StatusBar barStyle="light-content" backgroundColor={COLORS.bgDeep} />
@@ -136,6 +169,7 @@ function AppContent() {
         onPrev={goPrev}
         onNext={goNext}
         onToday={goToday}
+        onOpenSettings={() => setShowSettings(true)}
       />
 
       {viewMode === 'month' ? (
@@ -182,6 +216,13 @@ function AppContent() {
           onSave={handleSaveEvent}
           onDelete={handleDeleteEvent}
           onClose={() => setEditingEvent(null)}
+        />
+      )}
+
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          onCategoriesChanged={refreshCategories}
         />
       )}
     </View>
