@@ -1,5 +1,6 @@
-import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Dimensions } from 'react-native';
 import { useMemo } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONTS } from '../lib/theme';
 import {
   greekMonthDays, gregToGreek, dayOfWeek,
@@ -14,11 +15,15 @@ const HORIZONTAL_PADDING = 8;
 const CELL_SIZE = (SCREEN_W - HORIZONTAL_PADDING * 2 - CELL_GAP * 6) / 7;
 
 export default function MonthView({ monthId, year, themeColor, events, categories, onDayClick, today }) {
+  const insets = useSafeAreaInsets();
   const days = useMemo(() => greekMonthDays(monthId, year), [monthId, year]);
 
   if (monthId === 'PLANNING') {
     return (
-      <View style={{ padding: 24 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 24, paddingBottom: 24 + insets.bottom + 48 }}
+      >
         {days.map(d => (
           <PlanningCell
             key={d}
@@ -30,7 +35,7 @@ export default function MonthView({ monthId, year, themeColor, events, categorie
             onClick={() => onDayClick(d)}
           />
         ))}
-      </View>
+      </ScrollView>
     );
   }
 
@@ -55,7 +60,13 @@ export default function MonthView({ monthId, year, themeColor, events, categorie
   ];
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={[
+        styles.container,
+        { paddingBottom: insets.bottom + 56 },
+      ]}
+    >
       <DayHeader />
       <View style={styles.grid}>
         {cells.map(({ iso, ghost }, i) => (
@@ -72,7 +83,7 @@ export default function MonthView({ monthId, year, themeColor, events, categorie
           />
         ))}
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -209,7 +220,6 @@ const styles = StyleSheet.create({
   container: {
     paddingHorizontal: HORIZONTAL_PADDING,
     paddingTop: 12,
-    paddingBottom: 24,
   },
   dayHeader: {
     flexDirection: 'row',
