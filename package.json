@@ -9,8 +9,11 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@notifee/react-native": "^9.1.8",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/datetimepicker": "8.4.4",
     "expo": "~54.0.33",
+    "expo-build-properties": "^56.0.15",
     "expo-constants": "~18.0.13",
     "expo-device": "~8.0.10",
     "expo-notifications": "~0.32.17",
