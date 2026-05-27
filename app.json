@@ -42,7 +42,7 @@
     },
     "owner": "lightbearer77",
     "plugins": [
-      "expo-router",
+      
       "expo-sqlite",
       [
         "expo-build-properties",
