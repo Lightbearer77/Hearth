@@ -42,7 +42,6 @@
     },
     "owner": "lightbearer77",
     "plugins": [
-      
       "expo-sqlite",
       [
         "expo-build-properties",
@@ -53,8 +52,7 @@
             "minSdkVersion": 26
           }
         }
-      ],
-      "@notifee/react-native"
+      ]
     ]
   }
 }
