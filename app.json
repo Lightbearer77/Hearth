@@ -40,17 +40,7 @@
     },
     "owner": "lightbearer77",
     "plugins": [
-      "expo-sqlite",
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "compileSdkVersion": 35,
-            "targetSdkVersion": 35,
-            "minSdkVersion": 26
-          }
-        }
-      ]
+      "expo-sqlite"
     ]
   }
 }
