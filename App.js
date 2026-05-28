@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { View, StatusBar, StyleSheet, PanResponder } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Font from 'expo-font';
 
 import { COLORS } from './lib/theme';
 import {
@@ -14,9 +13,6 @@ import {
   saveEvent as dbSaveEvent, deleteEvent as dbDeleteEvent,
   newEvent,
 } from './lib/storage';
-import {
-  getPermissionStatus, scheduleAllHolidayNotifications,
-} from './lib/notifications';
 
 import SeasonalBanner from './components/SeasonalBanner';
 import MonthView from './components/MonthView';
@@ -40,28 +36,25 @@ function AppContent() {
   const [editingEvent, setEditingEvent] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
 
-  // ─── Init: load fonts, database, data, refresh notifications ───
+  // ─── Init: load database & data. Notifications init lazily via Settings panel. ───
   useEffect(() => {
     (async () => {
       try {
-        // Load fonts — won't crash if files missing, just uses fallback
-        try {
-          await Font.loadAsync({
-            CormorantGaramond: require('./assets/fonts/CormorantGaramond-Regular.ttf'),
-            Spectral:          require('./assets/fonts/Spectral-Regular.ttf'),
-          });
-        } catch (fontErr) {
-          // Fonts not present yet — fallback to system serif. App still works.
-          console.log('Custom fonts not loaded (will use system fallback):', fontErr?.message);
-        }
-
         await initDatabase();
         const [evts, cats] = await Promise.all([getAllEvents(), getAllCategories()]);
         setEvents(evts);
         setCategories(cats);
+      } catch (e) {
+        console.warn('Init failed', e);
+      } finally {
+        setReady(true);
+      }
 
-        // Refresh notifications on launch if permission already granted
+      // Notifications refresh in the background, doesn't block app ready
+      setTimeout(async () => {
         try {
+          const { getPermissionStatus, scheduleAllHolidayNotifications } =
+            await import('./lib/notifications');
           const status = await getPermissionStatus();
           if (status === 'granted') {
             await scheduleAllHolidayNotifications();
@@ -69,15 +62,10 @@ function AppContent() {
         } catch (notifErr) {
           console.log('Notification refresh skipped:', notifErr?.message);
         }
-      } catch (e) {
-        console.warn('Init failed', e);
-      } finally {
-        setReady(true);
-      }
+      }, 1000);
     })();
   }, []);
 
-  // ─── Navigation ───
   const goPrev = () => setView(v => prevGreekMonth(v.monthId, v.year));
   const goNext = () => setView(v => nextGreekMonth(v.monthId, v.year));
   const goToday = () => {
@@ -85,7 +73,6 @@ function AppContent() {
     if (t) setView({ monthId: t.monthId, year: t.year });
   };
 
-  // ─── Event CRUD ───
   const handleSaveEvent = useCallback(async (evt) => {
     try {
       await dbSaveEvent(evt);
@@ -114,13 +101,11 @@ function AppContent() {
     setEditingEvent(newEvent({ date: isoDate }));
   };
 
-  // ─── Categories refresh hook ───
   const refreshCategories = useCallback(async () => {
     const cats = await getAllCategories();
     setCategories(cats);
   }, []);
 
-  // ─── Swipe handling ───
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gs) =>
