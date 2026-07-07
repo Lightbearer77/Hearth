@@ -20,6 +20,7 @@ import AgendaView from './components/AgendaView';
 import DayDetail from './components/DayDetail';
 import EventModal from './components/EventModal';
 import SettingsModal from './components/SettingsModal';
+import { getPermissionStatus, scheduleAllHolidayNotifications } from './lib/notifications';
 
 // ─── ErrorBoundary catches render-phase crashes and shows the error ───
 class ErrorBoundary extends Component {
@@ -81,6 +82,19 @@ function AppContent() {
       } finally {
         setReady(true);
       }
+
+      // Rolling 90-day notification window: re-schedule on every launch so
+      // reminders keep firing even if Settings is never opened again. Runs
+      // after setReady — cannot block or crash startup.
+      try {
+        const status = await getPermissionStatus();
+        if (status === 'granted') {
+          const res = await scheduleAllHolidayNotifications();
+          console.log(`[Hearth] Notification window refreshed: ${res.scheduled} scheduled`);
+        }
+      } catch (notifErr) {
+        console.log('[Hearth] Notification refresh skipped:', notifErr?.message);
+      }
     })();
   }, []);
 
@@ -116,8 +130,11 @@ function AppContent() {
   };
 
   const refreshCategories = useCallback(async () => {
-    const cats = await getAllCategories();
+    // Category edits can also rewrite events (deletion reassigns their
+    // categoryId in SQLite), so reload both to keep dots/colors accurate.
+    const [cats, evts] = await Promise.all([getAllCategories(), getAllEvents()]);
     setCategories(cats);
+    setEvents(evts);
   }, []);
 
   const panResponder = useRef(
