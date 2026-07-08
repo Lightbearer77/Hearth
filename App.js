@@ -20,7 +20,7 @@ import AgendaView from './components/AgendaView';
 import DayDetail from './components/DayDetail';
 import EventModal from './components/EventModal';
 import SettingsModal from './components/SettingsModal';
-import { getPermissionStatus, scheduleAllHolidayNotifications } from './lib/notifications';
+import { getPermissionStatus, refreshAllNotifications } from './lib/notifications';
 
 // ─── ErrorBoundary catches render-phase crashes and shows the error ───
 class ErrorBoundary extends Component {
@@ -89,7 +89,7 @@ function AppContent() {
       try {
         const status = await getPermissionStatus();
         if (status === 'granted') {
-          const res = await scheduleAllHolidayNotifications();
+          const res = await refreshAllNotifications();
           console.log(`[Hearth] Notification window refreshed: ${res.scheduled} scheduled`);
         }
       } catch (notifErr) {
@@ -105,6 +105,17 @@ function AppContent() {
     if (t) setView({ monthId: t.monthId, year: t.year });
   };
 
+  const bumpNotifications = useCallback(() => {
+    (async () => {
+      try {
+        const status = await getPermissionStatus();
+        if (status === 'granted') await refreshAllNotifications();
+      } catch (e) {
+        console.log('[Hearth] Notification bump skipped:', e?.message);
+      }
+    })();
+  }, []);
+
   const handleSaveEvent = useCallback(async (evt) => {
     try {
       await dbSaveEvent(evt);
@@ -113,16 +124,18 @@ function AppContent() {
         return idx >= 0 ? prev.map((e, i) => i === idx ? evt : e) : [...prev, evt];
       });
       setEditingEvent(null);
+      bumpNotifications();
     } catch (e) { console.warn('Save failed', e); }
-  }, []);
+  }, [bumpNotifications]);
 
   const handleDeleteEvent = useCallback(async (id) => {
     try {
       await dbDeleteEvent(id);
       setEvents(prev => prev.filter(e => e.id !== id));
       setEditingEvent(null);
+      bumpNotifications();
     } catch (e) { console.warn('Delete failed', e); }
-  }, []);
+  }, [bumpNotifications]);
 
   const startNewEvent = (isoDate) => {
     setSelectedDate(null);
