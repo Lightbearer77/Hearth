@@ -7,9 +7,10 @@ import { COLORS, FONTS, PRESET_COLORS } from '../lib/theme';
 import {
   getAllCategories, saveCategory, deleteCategory, newCategory,
 } from '../lib/storage';
+import Constants from 'expo-constants';
 import {
   requestNotificationPermissions, getPermissionStatus,
-  scheduleAllHolidayNotifications, getScheduledNotifications,
+  refreshAllNotifications, getScheduledNotifications,
   cancelAllNotifications,
 } from '../lib/notifications';
 
@@ -78,12 +79,12 @@ export default function SettingsModal({ onClose, onCategoriesChanged }) {
     setBusy(true);
     const granted = await requestNotificationPermissions();
     if (granted) {
-      const result = await scheduleAllHolidayNotifications();
+      const result = await refreshAllNotifications();
       setNotifStatus('granted');
       setScheduledCount(result.scheduled);
       Alert.alert(
         'Notifications enabled',
-        `Scheduled ${result.scheduled} upcoming reminders for the next 90 days.`,
+        `Scheduled ${result.scheduled} reminders for the next 90 days (${result.holidays} holiday · ${result.events} event).`,
       );
     } else {
       Alert.alert(
@@ -96,7 +97,7 @@ export default function SettingsModal({ onClose, onCategoriesChanged }) {
 
   const handleRescheduleNotifications = async () => {
     setBusy(true);
-    const result = await scheduleAllHolidayNotifications();
+    const result = await refreshAllNotifications();
     setScheduledCount(result.scheduled);
     Alert.alert('Refreshed', `${result.scheduled} reminders scheduled.`);
     setBusy(false);
@@ -137,8 +138,8 @@ export default function SettingsModal({ onClose, onCategoriesChanged }) {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>NOTIFICATIONS</Text>
             <Text style={styles.sectionDesc}>
-              Local reminders 14, 7, and 1 day before each holiday and Day of Remembrance.
-              Fires at 9am.
+              Holiday and remembrance reminders 14, 7, and 1 day before (at 9am),
+              plus a reminder for each of your events at its start time.
             </Text>
 
             <View style={styles.statusRow}>
@@ -242,7 +243,7 @@ export default function SettingsModal({ onClose, onCategoriesChanged }) {
               The Hearth — a perpetual 13-month Greek calendar honoring the Asatru year-wheel.
             </Text>
             <Text style={styles.aboutVersion}>
-              Session 3 · {Platform.OS} · SDK 54
+              v{Constants.expoConfig?.version ?? '1.1.0'} · {Platform.OS} · SDK 54
             </Text>
           </View>
         </ScrollView>
