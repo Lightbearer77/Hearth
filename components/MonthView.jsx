@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useMemo } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONTS } from '../lib/theme';
@@ -9,14 +9,36 @@ import {
 import { ASATRU_HOLIDAYS, remindersForDate } from '../lib/holidays';
 import { eventsForDate, categoryById } from '../lib/storage';
 
-const SCREEN_W = Dimensions.get('window').width;
 const CELL_GAP = 2;
 const HORIZONTAL_PADDING = 8;
-const CELL_SIZE = (SCREEN_W - HORIZONTAL_PADDING * 2 - CELL_GAP * 6) / 7;
 
 export default function MonthView({ monthId, year, themeColor, events, categories, onDayClick, today }) {
   const insets = useSafeAreaInsets();
+  // useWindowDimensions (not Dimensions.get at module load) so the grid
+  // reflows on rotation and fold/unfold.
+  const { width } = useWindowDimensions();
+  const cellSize = (width - HORIZONTAL_PADDING * 2 - CELL_GAP * 6) / 7;
+
   const days = useMemo(() => greekMonthDays(monthId, year), [monthId, year]);
+
+  // Precompute everything date-derived ONCE per (month, events) change,
+  // instead of per-cell per-render: greek date, holiday matches, reminder
+  // lookups, and event range filters. Cells become pure map lookups.
+  const dayData = useMemo(() => {
+    const map = {};
+    for (const iso of days) {
+      const greek = gregToGreek(iso);
+      map[iso] = {
+        greek,
+        holidays: ASATRU_HOLIDAYS.filter(
+          h => h.greekMonth === greek?.monthId && h.greekDay === greek?.day
+        ),
+        reminders: remindersForDate(iso),
+        events: eventsForDate(events, iso),
+      };
+    }
+    return map;
+  }, [days, events]);
 
   if (monthId === 'PLANNING') {
     return (
@@ -28,7 +50,7 @@ export default function MonthView({ monthId, year, themeColor, events, categorie
           <PlanningCell
             key={d}
             isoDate={d}
-            events={eventsForDate(events, d)}
+            events={dayData[d]?.events || []}
             categories={categories}
             isToday={d === today}
             themeColor={themeColor}
@@ -67,18 +89,18 @@ export default function MonthView({ monthId, year, themeColor, events, categorie
         { paddingBottom: insets.bottom + 56 },
       ]}
     >
-      <DayHeader />
+      <DayHeader cellSize={cellSize} />
       <View style={styles.grid}>
         {cells.map(({ iso, ghost }, i) => (
           <DayCell
             key={`${iso}-${ghost ? 'g' : 'r'}-${i}`}
             isoDate={iso}
             ghost={ghost}
-            events={ghost ? [] : eventsForDate(events, iso)}
+            data={ghost ? null : dayData[iso]}
             categories={categories}
             isToday={!ghost && iso === today}
             themeColor={themeColor}
-            year={year}
+            cellSize={cellSize}
             onClick={() => !ghost && onDayClick(iso)}
           />
         ))}
@@ -87,12 +109,12 @@ export default function MonthView({ monthId, year, themeColor, events, categorie
   );
 }
 
-function DayHeader() {
+function DayHeader({ cellSize }) {
   const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   return (
     <View style={styles.dayHeader}>
       {days.map(d => (
-        <Text key={d} style={styles.dayHeaderText}>
+        <Text key={d} style={[styles.dayHeaderText, { width: cellSize }]}>
           {d.toUpperCase()}
         </Text>
       ))}
@@ -100,12 +122,12 @@ function DayHeader() {
   );
 }
 
-function DayCell({ isoDate, ghost, events, categories, isToday, themeColor, year, onClick }) {
-  const greek = gregToGreek(isoDate);
-  const holidays = ghost ? [] : ASATRU_HOLIDAYS.filter(
-    h => h.greekMonth === greek?.monthId && h.greekDay === greek?.day
-  );
-  const reminders = ghost ? [] : remindersForDate(isoDate, year);
+function DayCell({ isoDate, ghost, data, categories, isToday, themeColor, cellSize, onClick }) {
+  const greek = data?.greek;
+  const holidays = data?.holidays || [];
+  const reminders = data?.reminders || [];
+  const events = data?.events || [];
+
   const hasHoliday = holidays.length > 0;
   const hasReminder = reminders.length > 0 && !hasHoliday;
   const gregDay = new Date(isoDate + 'T12:00:00').getDate();
@@ -123,8 +145,8 @@ function DayCell({ isoDate, ghost, events, categories, isToday, themeColor, year
   const cellStyle = [
     styles.cell,
     {
-      width: CELL_SIZE,
-      height: CELL_SIZE * 1.15,
+      width: cellSize,
+      height: cellSize * 1.15,
       backgroundColor: ghost
         ? 'transparent'
         : isToday
@@ -227,7 +249,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   dayHeaderText: {
-    width: CELL_SIZE,
     textAlign: 'center',
     fontSize: 9,
     fontFamily: FONTS.mono,
