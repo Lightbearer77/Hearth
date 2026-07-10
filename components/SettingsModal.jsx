@@ -139,7 +139,8 @@ export default function SettingsModal({ onClose, onCategoriesChanged }) {
             <Text style={styles.sectionTitle}>NOTIFICATIONS</Text>
             <Text style={styles.sectionDesc}>
               Holiday and remembrance reminders 14, 7, and 1 day before (at 9am),
-              plus a reminder for each of your events at its start time.
+              plus event reminders at the offset you choose — repeating events
+              included, each occurrence scheduled individually.
             </Text>
 
             <View style={styles.statusRow}>
