@@ -7,7 +7,8 @@ import {
   prevGreekMonth, nextGreekMonth,
 } from '../lib/constants';
 import { ASATRU_HOLIDAYS, remindersForDate } from '../lib/holidays';
-import { eventsForDate, categoryById } from '../lib/storage';
+import { categoryById } from '../lib/storage';
+import { eventsByDateInRange } from '../lib/recurrence';
 
 const CELL_GAP = 2;
 const HORIZONTAL_PADDING = 8;
@@ -26,6 +27,7 @@ export default function MonthView({ monthId, year, themeColor, events, categorie
   // lookups, and event range filters. Cells become pure map lookups.
   const dayData = useMemo(() => {
     const map = {};
+    const evMap = eventsByDateInRange(events, days);
     for (const iso of days) {
       const greek = gregToGreek(iso);
       map[iso] = {
@@ -34,7 +36,7 @@ export default function MonthView({ monthId, year, themeColor, events, categorie
           h => h.greekMonth === greek?.monthId && h.greekDay === greek?.day
         ),
         reminders: remindersForDate(iso),
-        events: eventsForDate(events, iso),
+        events: evMap[iso] || [],
       };
     }
     return map;
