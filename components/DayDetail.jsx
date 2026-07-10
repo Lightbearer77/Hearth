@@ -4,7 +4,8 @@ import {
 import { COLORS, FONTS } from '../lib/theme';
 import { gregToGreek, fmtGregLong, fmtGreek, SEASONAL_THEMES } from '../lib/constants';
 import { ASATRU_HOLIDAYS, remindersForDate } from '../lib/holidays';
-import { eventsForDate, categoryById } from '../lib/storage';
+import { categoryById } from '../lib/storage';
+import { occursOn } from '../lib/recurrence';
 
 export default function DayDetail({
   isoDate, events, categories, onClose, onAdd, onEdit,
@@ -15,7 +16,7 @@ export default function DayDetail({
     h => h.greekMonth === greek.monthId && h.greekDay === greek.day
   ) : [];
   const reminders = remindersForDate(isoDate, year);
-  const dayEvents = eventsForDate(events, isoDate);
+  const dayEvents = events.filter(e => occursOn(e, isoDate));
   const themeColor = greek
     ? (SEASONAL_THEMES[greek.monthId]?.color || COLORS.accent)
     : COLORS.accent;
@@ -190,12 +191,13 @@ function EventRow({ event, categories, onPress }) {
     ]}>
       <View style={{ flex: 1 }}>
         <Text style={styles.eventRowTitle}>{event.title || 'Untitled'}</Text>
-        {(event.startTime || event.location) && (
+        {(event.startTime || event.location || (event.recurrence && event.recurrence !== 'none')) && (
           <Text style={styles.eventRowSub}>
             {event.allDay
               ? 'All day'
               : (event.startTime + (event.endTime ? ` – ${event.endTime}` : ''))}
             {event.location && ` · ${event.location}`}
+            {event.recurrence && event.recurrence !== 'none' ? ' · ↻ repeats' : ''}
           </Text>
         )}
       </View>
