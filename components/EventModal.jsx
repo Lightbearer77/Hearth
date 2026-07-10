@@ -7,6 +7,16 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { COLORS, FONTS } from '../lib/theme';
 import { gregToGreek, fmtGregLong } from '../lib/constants';
 import { categoryById } from '../lib/storage';
+import { RECURRENCE_OPTIONS } from '../lib/recurrence';
+
+const REMINDER_OPTIONS = [
+  { value: null, label: 'None' },
+  { value: 0,    label: 'At start' },
+  { value: 10,   label: '10 min before' },
+  { value: 30,   label: '30 min before' },
+  { value: 60,   label: '1 hour before' },
+  { value: 1440, label: '1 day before' },
+];
 
 export default function EventModal({
   event, categories, onSave, onDelete, onClose,
@@ -28,14 +38,22 @@ export default function EventModal({
       return;
     }
     const finalForm = { ...form };
-    if (!showEndDate || !finalForm.endDate || finalForm.endDate < finalForm.date) {
+    const repeating = (finalForm.recurrence || 'none') !== 'none';
+    if (repeating || !showEndDate || !finalForm.endDate || finalForm.endDate < finalForm.date) {
       finalForm.endDate = '';
     }
+    if (!Array.isArray(finalForm.reminders)) finalForm.reminders = [0];
     onSave(finalForm);
   };
 
   const handleDelete = () => {
-    Alert.alert('Delete event?', 'This cannot be undone.', [
+    const repeating = (form.recurrence || 'none') !== 'none';
+    Alert.alert(
+      repeating ? 'Delete repeating event?' : 'Delete event?',
+      repeating
+        ? 'This removes the entire series — every occurrence.'
+        : 'This cannot be undone.',
+      [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => onDelete(form.id) },
     ]);
@@ -114,7 +132,7 @@ export default function EventModal({
           </Field>
 
           {/* End Date toggle / picker */}
-          {!showEndDate ? (
+          {(form.recurrence || 'none') !== 'none' ? null : !showEndDate ? (
             <TouchableOpacity
               onPress={() => setShowEndDate(true)}
               style={styles.addEndDateBtn}
@@ -148,6 +166,71 @@ export default function EventModal({
               </View>
             </Field>
           )}
+
+          {/* Repeat */}
+          <Field label="Repeat">
+            <View style={styles.categoryGrid}>
+              {RECURRENCE_OPTIONS.map(opt => {
+                const active = (form.recurrence || 'none') === opt.id;
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    onPress={() => update('recurrence', opt.id)}
+                    style={[
+                      styles.categoryChip,
+                      {
+                        backgroundColor: active ? `${COLORS.accent}22` : COLORS.bgSurface,
+                        borderColor: active ? COLORS.accent : COLORS.borderMid,
+                      },
+                    ]}
+                  >
+                    <Text style={[
+                      styles.categoryName,
+                      { color: active ? COLORS.accent : COLORS.textMuted },
+                    ]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            {(form.recurrence || 'none') !== 'none' && (
+              <Text style={styles.seriesHint}>
+                Series-level: edits and deletes apply to every occurrence.
+              </Text>
+            )}
+          </Field>
+
+          {/* Reminder */}
+          <Field label="Reminder">
+            <View style={styles.categoryGrid}>
+              {REMINDER_OPTIONS.map(opt => {
+                const current = Array.isArray(form.reminders) && form.reminders.length
+                  ? form.reminders[0] : null;
+                const active = current === opt.value;
+                return (
+                  <TouchableOpacity
+                    key={String(opt.value)}
+                    onPress={() => update('reminders', opt.value === null ? [] : [opt.value])}
+                    style={[
+                      styles.categoryChip,
+                      {
+                        backgroundColor: active ? `${COLORS.accent}22` : COLORS.bgSurface,
+                        borderColor: active ? COLORS.accent : COLORS.borderMid,
+                      },
+                    ]}
+                  >
+                    <Text style={[
+                      styles.categoryName,
+                      { color: active ? COLORS.accent : COLORS.textMuted },
+                    ]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </Field>
 
           {/* Time */}
           <Field label="Time">
@@ -473,6 +556,14 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: FONTS.mono,
     letterSpacing: 1.2,
+  },
+  seriesHint: {
+    fontSize: 11,
+    fontFamily: FONTS.body,
+    fontStyle: 'italic',
+    color: COLORS.textMuted,
+    marginTop: 8,
+    paddingLeft: 2,
   },
 
   deleteBtn: {
