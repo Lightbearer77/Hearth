@@ -4,7 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONTS } from '../lib/theme';
 import { greekMonthDays, gregToGreek, fmtGreg } from '../lib/constants';
 import { ASATRU_HOLIDAYS, remindersForDate } from '../lib/holidays';
-import { eventsForDate, categoryById } from '../lib/storage';
+import { categoryById } from '../lib/storage';
+import { eventsByDateInRange } from '../lib/recurrence';
 
 export default function AgendaView({
   monthId, year, themeColor, events, categories,
@@ -15,13 +16,14 @@ export default function AgendaView({
 
   const agenda = useMemo(() => {
     const result = [];
+    const evMap = eventsByDateInRange(events, days);
     for (const iso of days) {
       const greek = gregToGreek(iso);
       const holidays = ASATRU_HOLIDAYS.filter(
         h => h.greekMonth === greek?.monthId && h.greekDay === greek?.day
       );
       const reminders = remindersForDate(iso, year);
-      const dayEvents = eventsForDate(events, iso);
+      const dayEvents = evMap[iso] || [];
 
       if (holidays.length === 0 && reminders.length === 0 && dayEvents.length === 0) continue;
 
