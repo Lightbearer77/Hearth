@@ -20,22 +20,26 @@ export default function SeasonalBanner({
     <View style={[styles.container, { backgroundColor: `${theme.color}1a` }]}>
       {/* Nav row */}
       <View style={styles.navRow}>
-        <TouchableOpacity onPress={onPrev} style={styles.navBtn}>
-          <Text style={styles.navBtnText}>‹</Text>
-        </TouchableOpacity>
+        {/* Invisible spacer mirrors the gear so TODAY stays centered */}
+        <View style={styles.sideGroup}>
+          <View style={styles.navBtn} />
+          <TouchableOpacity onPress={onPrev} style={styles.navBtn}>
+            <Text style={styles.navBtnText}>‹</Text>
+          </TouchableOpacity>
+        </View>
 
         <TouchableOpacity onPress={onToday} style={styles.todayBtn}>
           <Text style={styles.todayBtnText}>TODAY</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={onNext} style={styles.navBtn}>
-          <Text style={styles.navBtnText}>›</Text>
-        </TouchableOpacity>
-
-        {/* Settings gear — top right corner */}
-        <TouchableOpacity onPress={onOpenSettings} style={styles.gearBtn}>
-          <Text style={styles.gearBtnText}>⚙</Text>
-        </TouchableOpacity>
+        <View style={styles.sideGroup}>
+          <TouchableOpacity onPress={onNext} style={styles.navBtn}>
+            <Text style={styles.navBtnText}>›</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onOpenSettings} style={styles.navBtn}>
+            <Text style={styles.gearBtnText}>⚙</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.titleArea}>
@@ -133,11 +137,9 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     letterSpacing: 2,
   },
-  gearBtn: {
-    position: 'absolute',
-    right: 0,
-    width: 36, height: 36,
-    alignItems: 'center', justifyContent: 'center',
+  sideGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   gearBtnText: {
     fontSize: 22,
