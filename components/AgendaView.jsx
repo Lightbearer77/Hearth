@@ -119,7 +119,7 @@ function DayBlock({ entry, themeColor, categories, onDayClick, onEventClick }) {
             key={evt.id}
             event={evt}
             categories={categories}
-            onPress={() => onEventClick(evt)}
+            onPress={() => onEventClick(evt, isoDate)}
           />
         ))}
       </View>
