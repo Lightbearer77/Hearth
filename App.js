@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback, Component } from 'react';
-import { View, Text, StatusBar, StyleSheet, PanResponder, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StatusBar, StyleSheet, PanResponder, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -68,6 +68,8 @@ function AppContent() {
   const [ready, setReady] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [editingEvent, setEditingEvent] = useState(null);
+  // When editing one occurrence of a series: { mode:'occurrence', masterId, occurrenceIso }
+  const [editingCtx, setEditingCtx] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
@@ -105,6 +107,50 @@ function AppContent() {
     if (t) setView({ monthId: t.monthId, year: t.year });
   };
 
+  const openEventForEdit = useCallback((evt, occurrenceIso) => {
+    const repeating = (evt.recurrence || 'none') !== 'none';
+    if (!repeating || !occurrenceIso) {
+      setEditingCtx(null);
+      setEditingEvent(evt);
+      return;
+    }
+    Alert.alert('Repeating event', 'Apply changes to\u2026', [
+      {
+        text: 'This occurrence',
+        onPress: () => {
+          // Detach: a standalone draft for this date; on save the series
+          // gains an exception for the original slot.
+          const draft = {
+            ...evt,
+            id: newEvent().id,
+            date: occurrenceIso,
+            endDate: '',
+            recurrence: 'none',
+            recurrenceInterval: 1,
+            exdates: [],
+            createdAt: Date.now(),
+          };
+          setEditingCtx({ mode: 'occurrence', masterId: evt.id, occurrenceIso });
+          setEditingEvent(draft);
+        },
+      },
+      {
+        text: 'Entire series',
+        onPress: () => { setEditingCtx(null); setEditingEvent(evt); },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }, []);
+
+  const exdateMaster = useCallback(async (masterId, iso) => {
+    const master = events.find(e => e.id === masterId);
+    if (!master) return;
+    const exdates = Array.isArray(master.exdates) ? master.exdates : [];
+    if (!exdates.includes(iso)) {
+      await dbSaveEvent({ ...master, exdates: [...exdates, iso] });
+    }
+  }, [events]);
+
   const bumpNotifications = useCallback(() => {
     (async () => {
       try {
@@ -119,26 +165,41 @@ function AppContent() {
   const handleSaveEvent = useCallback(async (evt) => {
     try {
       await dbSaveEvent(evt);
-      setEvents(prev => {
-        const idx = prev.findIndex(e => e.id === evt.id);
-        return idx >= 0 ? prev.map((e, i) => i === idx ? evt : e) : [...prev, evt];
-      });
+      if (editingCtx?.mode === 'occurrence' && editingCtx.masterId) {
+        await exdateMaster(editingCtx.masterId, editingCtx.occurrenceIso);
+        setEvents(await getAllEvents());
+      } else {
+        setEvents(prev => {
+          const idx = prev.findIndex(e => e.id === evt.id);
+          return idx >= 0 ? prev.map((e, i) => i === idx ? evt : e) : [...prev, evt];
+        });
+      }
       setEditingEvent(null);
+      setEditingCtx(null);
       bumpNotifications();
     } catch (e) { console.warn('Save failed', e); }
-  }, [bumpNotifications]);
+  }, [bumpNotifications, editingCtx, exdateMaster]);
 
   const handleDeleteEvent = useCallback(async (id) => {
     try {
-      await dbDeleteEvent(id);
-      setEvents(prev => prev.filter(e => e.id !== id));
+      if (editingCtx?.mode === 'occurrence' && editingCtx.masterId) {
+        // Draft was never persisted — removing the occurrence just adds an
+        // exception date to the series.
+        await exdateMaster(editingCtx.masterId, editingCtx.occurrenceIso);
+        setEvents(await getAllEvents());
+      } else {
+        await dbDeleteEvent(id);
+        setEvents(prev => prev.filter(e => e.id !== id));
+      }
       setEditingEvent(null);
+      setEditingCtx(null);
       bumpNotifications();
     } catch (e) { console.warn('Delete failed', e); }
-  }, [bumpNotifications]);
+  }, [bumpNotifications, editingCtx, exdateMaster]);
 
   const startNewEvent = (isoDate) => {
     setSelectedDate(null);
+    setEditingCtx(null);
     setEditingEvent(newEvent({ date: isoDate }));
   };
 
@@ -201,7 +262,7 @@ function AppContent() {
           monthId={view.monthId} year={view.year}
           themeColor={monthMeta.theme.color} events={events}
           categories={categories} onDayClick={setSelectedDate}
-          onEventClick={setEditingEvent} today={todayISO()}
+          onEventClick={openEventForEdit} today={todayISO()}
         />
       )}
       {selectedDate && (
@@ -209,14 +270,15 @@ function AppContent() {
           isoDate={selectedDate} events={events} categories={categories}
           onClose={() => setSelectedDate(null)}
           onAdd={() => startNewEvent(selectedDate)}
-          onEdit={(evt) => { setSelectedDate(null); setEditingEvent(evt); }}
+          onEdit={(evt, iso) => { setSelectedDate(null); openEventForEdit(evt, iso); }}
         />
       )}
       {editingEvent && (
         <EventModal
           event={editingEvent} categories={categories}
+          occurrenceMode={editingCtx?.mode === 'occurrence'}
           onSave={handleSaveEvent} onDelete={handleDeleteEvent}
-          onClose={() => setEditingEvent(null)}
+          onClose={() => { setEditingEvent(null); setEditingCtx(null); }}
         />
       )}
       {showSettings && (
