@@ -29,7 +29,7 @@ const {
   isLeapYear, fmtGreekLong,
 } = await import(pathToFileURL(join(stage, 'constants.mjs')).href);
 const { remindersForDate } = await import(pathToFileURL(join(stage, 'holidays.mjs')).href);
-const { expandOccurrences, occursOn, eventsByDateInRange } = await import(pathToFileURL(join(stage, 'recurrence.mjs')).href);
+const { expandOccurrences, occursOn, eventsByDateInRange, recurrenceLabel } = await import(pathToFileURL(join(stage, 'recurrence.mjs')).href);
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) pass++; else { fail++; console.log('FAIL:', msg); } };
@@ -164,6 +164,43 @@ const map7 = eventsByDateInRange(mixed, days7);
 ok(map7['2026-07-08'].map(e=>e.id).sort().join(',') === 'a,b,d', `map Jul8: ${map7['2026-07-08'].map(e=>e.id)}`);
 ok(map7['2026-07-10'].map(e=>e.id).sort().join(',') === 'a,c', `map Jul10: ${map7['2026-07-10'].map(e=>e.id)}`);
 ok(map7['2026-07-06'].map(e=>e.id).join(',') === 'a', `map Jul6: ${map7['2026-07-06'].map(e=>e.id)}`);
+
+// ── 6. Custom intervals + exceptions ──
+// every 3 days
+r = expandOccurrences(ev({ recurrence: 'daily', recurrenceInterval: 3 }), '2026-07-01', '2026-07-15');
+ok(r.join(',') === '2026-07-01,2026-07-04,2026-07-07,2026-07-10,2026-07-13', `every 3 days: ${r}`);
+// every 3 days, mid-range window still phase-locks to master
+r = expandOccurrences(ev({ recurrence: 'daily', recurrenceInterval: 3 }), '2026-07-05', '2026-07-12');
+ok(r.join(',') === '2026-07-07,2026-07-10', `every 3 days mid-range: ${r}`);
+// legacy biweekly rows == weekly x2
+r = expandOccurrences(ev({ date: '2026-07-08', recurrence: 'biweekly' }), '2026-07-01', '2026-08-31');
+const r2 = expandOccurrences(ev({ date: '2026-07-08', recurrence: 'weekly', recurrenceInterval: 2 }), '2026-07-01', '2026-08-31');
+ok(r.join(',') === r2.join(','), `legacy biweekly == weekly x2: ${r} vs ${r2}`);
+// every 2 months anchored to master (Jan 15 -> Jan,Mar,May,...)
+r = expandOccurrences(ev({ date: '2026-01-15', recurrence: 'monthly', recurrenceInterval: 2 }), '2026-01-01', '2026-12-31');
+ok(r.join(',') === '2026-01-15,2026-03-15,2026-05-15,2026-07-15,2026-09-15,2026-11-15', `every 2 months: ${r}`);
+// every 2 months from Jan 31: candidate months Jan,Mar,May,Jul,Sep,Nov all have 31 except Sep,Nov
+r = expandOccurrences(ev({ date: '2026-01-31', recurrence: 'monthly', recurrenceInterval: 2 }), '2026-01-01', '2026-12-31');
+ok(r.join(',') === '2026-01-31,2026-03-31,2026-05-31,2026-07-31', `every 2 months day-31 skips: ${r}`);
+// every 2 years
+r = expandOccurrences(ev({ date: '2026-07-08', recurrence: 'yearly', recurrenceInterval: 2 }), '2026-01-01', '2031-12-31');
+ok(r.join(',') === '2026-07-08,2028-07-08,2030-07-08', `every 2 years: ${r}`);
+// every 2 Greek months (Eta 1 master -> Eta, Iota, Lambda, Nu, Beta...)
+r = expandOccurrences(ev({ date: '2026-06-18', recurrence: 'greekMonthly', recurrenceInterval: 2 }), '2026-06-01', '2026-12-31');
+ok(r.join(',') === '2026-06-18,2026-08-13,2026-10-08,2026-12-03', `every 2 Greek months: ${r}`);
+// exdates: skip one weekly occurrence
+r = expandOccurrences(ev({ date: '2026-07-08', recurrence: 'weekly', exdates: ['2026-07-22'] }), '2026-07-01', '2026-07-31');
+ok(r.join(',') === '2026-07-08,2026-07-15,2026-07-29', `exdate skipped: ${r}`);
+ok(occursOn(ev({ date: '2026-07-08', recurrence: 'weekly', exdates: ['2026-07-22'] }), '2026-07-22') === false, 'occursOn respects exdate');
+ok(occursOn(ev({ date: '2026-07-08', recurrence: 'weekly', exdates: ['2026-07-22'] }), '2026-07-29') === true, 'occursOn after exdate');
+// exdate on the master date itself
+r = expandOccurrences(ev({ date: '2026-07-08', recurrence: 'weekly', exdates: ['2026-07-08'] }), '2026-07-01', '2026-07-31');
+ok(r.join(',') === '2026-07-15,2026-07-22,2026-07-29', `exdate on master: ${r}`);
+// labels
+ok(recurrenceLabel('weekly', 1) === 'Weekly', 'label weekly');
+ok(recurrenceLabel('weekly', 3) === 'Every 3 weeks', 'label every 3 weeks');
+ok(recurrenceLabel('biweekly', 1) === 'Every 2 weeks', 'label legacy biweekly');
+ok(recurrenceLabel('greekMonthly', 2) === 'Every 2 Greek months', 'label greek interval');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
