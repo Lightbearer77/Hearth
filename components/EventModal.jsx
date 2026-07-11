@@ -7,7 +7,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { COLORS, FONTS } from '../lib/theme';
 import { gregToGreek, fmtGregLong } from '../lib/constants';
 import { categoryById } from '../lib/storage';
-import { RECURRENCE_OPTIONS } from '../lib/recurrence';
+import { RECURRENCE_OPTIONS, CUSTOM_UNITS, recurrenceLabel } from '../lib/recurrence';
 
 const REMINDER_OPTIONS = [
   { value: null, label: 'None' },
@@ -19,10 +19,11 @@ const REMINDER_OPTIONS = [
 ];
 
 export default function EventModal({
-  event, categories, onSave, onDelete, onClose,
+  event, categories, onSave, onDelete, onClose, occurrenceMode = false,
 }) {
   const [form, setForm] = useState(event);
   const [showEndDate, setShowEndDate] = useState(!!event.endDate);
+  const [customOpen, setCustomOpen] = useState((event.recurrenceInterval || 1) > 1);
   const [datePicker, setDatePicker] = useState(null); // 'start' | 'end' | 'startTime' | 'endTime' | null
   const isNew = !event.title && event.createdAt && (Date.now() - event.createdAt < 5000);
 
@@ -38,6 +39,8 @@ export default function EventModal({
       return;
     }
     const finalForm = { ...form };
+    finalForm.recurrenceInterval = Math.max(1, Math.floor(finalForm.recurrenceInterval || 1));
+    if ((finalForm.recurrence || 'none') === 'none') finalForm.recurrenceInterval = 1;
     const repeating = (finalForm.recurrence || 'none') !== 'none';
     if (repeating || !showEndDate || !finalForm.endDate || finalForm.endDate < finalForm.date) {
       finalForm.endDate = '';
@@ -49,10 +52,12 @@ export default function EventModal({
   const handleDelete = () => {
     const repeating = (form.recurrence || 'none') !== 'none';
     Alert.alert(
-      repeating ? 'Delete repeating event?' : 'Delete event?',
-      repeating
-        ? 'This removes the entire series — every occurrence.'
-        : 'This cannot be undone.',
+      occurrenceMode ? 'Remove this occurrence?'
+        : repeating ? 'Delete repeating event?' : 'Delete event?',
+      occurrenceMode ? 'The rest of the series is unaffected.'
+        : repeating
+          ? 'This removes the entire series — every occurrence.'
+          : 'This cannot be undone.',
       [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => onDelete(form.id) },
@@ -90,7 +95,7 @@ export default function EventModal({
             <Text style={styles.headerBtnText}>← CANCEL</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
-            {isNew ? 'New Event' : 'Edit Event'}
+            {occurrenceMode ? 'Edit Occurrence' : isNew ? 'New Event' : 'Edit Event'}
           </Text>
           <TouchableOpacity onPress={handleSave} style={styles.headerBtn}>
             <Text style={[styles.headerBtnText, { color: COLORS.accent, fontWeight: '600' }]}>
@@ -168,14 +173,24 @@ export default function EventModal({
           )}
 
           {/* Repeat */}
+          {occurrenceMode ? (
+            <Text style={styles.seriesHint}>
+              Detached from its series — edits here affect only this occurrence.
+            </Text>
+          ) : (
           <Field label="Repeat">
             <View style={styles.categoryGrid}>
               {RECURRENCE_OPTIONS.map(opt => {
-                const active = (form.recurrence || 'none') === opt.id;
+                const active = !customOpen
+                  && (form.recurrence || 'none') === opt.id
+                  && (form.recurrenceInterval || 1) <= 1;
                 return (
                   <TouchableOpacity
                     key={opt.id}
-                    onPress={() => update('recurrence', opt.id)}
+                    onPress={() => {
+                      setCustomOpen(false);
+                      setForm(f => ({ ...f, recurrence: opt.id, recurrenceInterval: 1 }));
+                    }}
                     style={[
                       styles.categoryChip,
                       {
@@ -193,25 +208,104 @@ export default function EventModal({
                   </TouchableOpacity>
                 );
               })}
+              {(() => {
+                const active = customOpen || (form.recurrenceInterval || 1) > 1;
+                return (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setCustomOpen(true);
+                      setForm(f => ({
+                        ...f,
+                        recurrence: (f.recurrence && f.recurrence !== 'none') ? f.recurrence : 'weekly',
+                        recurrenceInterval: Math.max(2, Math.floor(f.recurrenceInterval || 1)),
+                      }));
+                    }}
+                    style={[
+                      styles.categoryChip,
+                      {
+                        backgroundColor: active ? `${COLORS.accent}22` : COLORS.bgSurface,
+                        borderColor: active ? COLORS.accent : COLORS.borderMid,
+                      },
+                    ]}
+                  >
+                    <Text style={[
+                      styles.categoryName,
+                      { color: active ? COLORS.accent : COLORS.textMuted },
+                    ]}>
+                      Custom…
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })()}
             </View>
+
+            {(customOpen || (form.recurrenceInterval || 1) > 1) && (
+              <View style={styles.customRow}>
+                <Text style={styles.customEvery}>EVERY</Text>
+                <TextInput
+                  value={String(form.recurrenceInterval || 2)}
+                  onChangeText={(t) => {
+                    const n = parseInt(t.replace(/[^0-9]/g, ''), 10);
+                    update('recurrenceInterval', Number.isFinite(n) ? Math.min(999, Math.max(1, n)) : 1);
+                  }}
+                  keyboardType="number-pad"
+                  maxLength={3}
+                  style={styles.customInput}
+                />
+                <View style={styles.customUnits}>
+                  {CUSTOM_UNITS.map(u => {
+                    const active = (form.recurrence || 'weekly') === u.id;
+                    return (
+                      <TouchableOpacity
+                        key={u.id}
+                        onPress={() => update('recurrence', u.id)}
+                        style={[
+                          styles.categoryChip,
+                          {
+                            backgroundColor: active ? `${COLORS.accent}22` : COLORS.bgSurface,
+                            borderColor: active ? COLORS.accent : COLORS.borderMid,
+                          },
+                        ]}
+                      >
+                        <Text style={[
+                          styles.categoryName,
+                          { color: active ? COLORS.accent : COLORS.textMuted },
+                        ]}>
+                          {(form.recurrenceInterval || 1) > 1 ? u.plural : u.singular}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
             {(form.recurrence || 'none') !== 'none' && (
               <Text style={styles.seriesHint}>
-                Series-level: edits and deletes apply to every occurrence.
+                {recurrenceLabel(form.recurrence, form.recurrenceInterval || 1)} — series
+                edits apply to every occurrence unless you edit a single one from its day.
               </Text>
             )}
           </Field>
+          )}
 
           {/* Reminder */}
           <Field label="Reminder">
             <View style={styles.categoryGrid}>
               {REMINDER_OPTIONS.map(opt => {
-                const current = Array.isArray(form.reminders) && form.reminders.length
-                  ? form.reminders[0] : null;
-                const active = current === opt.value;
+                const cur = Array.isArray(form.reminders) ? form.reminders : [];
+                const active = opt.value === null ? cur.length === 0 : cur.includes(opt.value);
                 return (
                   <TouchableOpacity
                     key={String(opt.value)}
-                    onPress={() => update('reminders', opt.value === null ? [] : [opt.value])}
+                    onPress={() => {
+                      if (opt.value === null) { update('reminders', []); return; }
+                      const cur = Array.isArray(form.reminders) ? form.reminders : [];
+                      const next = cur.includes(opt.value)
+                        ? cur.filter(v => v !== opt.value)
+                        : [...cur, opt.value].sort((a, b) => a - b);
+                      update('reminders', next);
+                    }}
                     style={[
                       styles.categoryChip,
                       {
@@ -332,7 +426,9 @@ export default function EventModal({
           {/* Delete */}
           {!isNew && (
             <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
-              <Text style={styles.deleteBtnText}>DELETE EVENT</Text>
+              <Text style={styles.deleteBtnText}>
+                {occurrenceMode ? 'DELETE THIS OCCURRENCE' : 'DELETE EVENT'}
+              </Text>
             </TouchableOpacity>
           )}
         </ScrollView>
@@ -556,6 +652,38 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: FONTS.mono,
     letterSpacing: 1.2,
+  },
+  customRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+  customEvery: {
+    fontSize: 10,
+    fontFamily: FONTS.mono,
+    letterSpacing: 2,
+    color: COLORS.textMuted,
+  },
+  customInput: {
+    backgroundColor: COLORS.bgElevated,
+    borderWidth: 1,
+    borderColor: COLORS.borderMid,
+    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 15,
+    color: COLORS.textPrimary,
+    fontFamily: FONTS.mono,
+    minWidth: 52,
+    textAlign: 'center',
+  },
+  customUnits: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    flex: 1,
   },
   seriesHint: {
     fontSize: 11,
