@@ -92,7 +92,7 @@ export default function DayDetail({
                     key={evt.id}
                     event={evt}
                     categories={categories}
-                    onPress={() => onEdit(evt)}
+                    onPress={() => onEdit(evt, isoDate)}
                   />
                 ))}
               </View>
