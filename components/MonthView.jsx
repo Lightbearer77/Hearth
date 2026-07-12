@@ -36,7 +36,9 @@ export default function MonthView({ monthId, year, themeColor, events, categorie
           h => h.greekMonth === greek?.monthId && h.greekDay === greek?.day
         ),
         reminders: remindersForDate(iso),
-        events: evMap[iso] || [],
+        entries: (evMap[iso] || []).slice().sort(
+          (a, b) => Number(a.isStart && a.isEnd) - Number(b.isStart && b.isEnd)
+        ),
       };
     }
     return map;
@@ -52,7 +54,7 @@ export default function MonthView({ monthId, year, themeColor, events, categorie
           <PlanningCell
             key={d}
             isoDate={d}
-            events={dayData[d]?.events || []}
+            events={(dayData[d]?.entries || []).map(x => x.event)}
             categories={categories}
             isToday={d === today}
             themeColor={themeColor}
@@ -128,7 +130,7 @@ function DayCell({ isoDate, ghost, data, categories, isToday, themeColor, cellSi
   const greek = data?.greek;
   const holidays = data?.holidays || [];
   const reminders = data?.reminders || [];
-  const events = data?.events || [];
+  const entries = data?.entries || [];
 
   const hasHoliday = holidays.length > 0;
   const hasReminder = reminders.length > 0 && !hasHoliday;
@@ -139,10 +141,9 @@ function DayCell({ isoDate, ghost, data, categories, isToday, themeColor, cellSi
     : null;
   const isRemembrance = primaryHoliday?.type === 'remembrance';
 
-  const eventDots = events.slice(0, 4).map(e => {
-    const cat = categoryById(categories, e.categoryId);
-    return cat?.color || COLORS.textMuted;
-  });
+  const MAX_BANNERS = 3;
+  const visible = entries.slice(0, MAX_BANNERS);
+  const hidden = entries.length - visible.length;
 
   const cellStyle = [
     styles.cell,
@@ -208,13 +209,35 @@ function DayCell({ isoDate, ghost, data, categories, isToday, themeColor, cellSi
         </Text>
       )}
 
-      {eventDots.length > 0 && (
-        <View style={styles.eventDotsRow}>
-          {eventDots.map((color, i) => (
-            <View key={i} style={[styles.eventDot, { backgroundColor: color }]} />
-          ))}
-          {events.length > 4 && (
-            <Text style={styles.eventMore}>+{events.length - 4}</Text>
+      {visible.length > 0 && (
+        <View style={styles.bannerCol}>
+          {visible.map(({ event, isStart, isEnd }) => {
+            const cat = categoryById(categories, event.categoryId);
+            return (
+              <View
+                key={event.id}
+                style={[styles.banner, {
+                  backgroundColor: cat?.color || COLORS.textMuted,
+                  borderTopLeftRadius: isStart ? 3 : 0,
+                  borderBottomLeftRadius: isStart ? 3 : 0,
+                  borderTopRightRadius: isEnd ? 3 : 0,
+                  borderBottomRightRadius: isEnd ? 3 : 0,
+                  // Continuation edges run to the cell border so adjacent
+                  // segments read as one bar across the grid seam.
+                  marginLeft: isStart ? 0 : -5,
+                  marginRight: isEnd ? 0 : -5,
+                }]}
+              >
+                {isStart ? (
+                  <Text style={styles.bannerText} numberOfLines={1} ellipsizeMode="tail">
+                    {event.title || 'Untitled'}
+                  </Text>
+                ) : null}
+              </View>
+            );
+          })}
+          {hidden > 0 && (
+            <Text style={styles.bannerMore}>+{hidden} more</Text>
           )}
         </View>
       )}
@@ -301,22 +324,28 @@ const styles = StyleSheet.create({
     fontSize: 7,
     color: COLORS.textFaint,
   },
-  eventDotsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 2,
-    marginTop: 'auto',
+  bannerCol: {
+    marginTop: 2,
+  },
+  banner: {
+    height: 12,
     justifyContent: 'center',
-    paddingBottom: 2,
+    paddingHorizontal: 3,
+    marginTop: 1,
+    overflow: 'hidden',
   },
-  eventDot: {
-    width: 5, height: 5,
-    borderRadius: 2.5,
+  bannerText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: COLORS.bgDeep,
+    letterSpacing: 0.2,
   },
-  eventMore: {
+  bannerMore: {
     fontSize: 7,
     fontFamily: FONTS.mono,
     color: COLORS.textMuted,
+    textAlign: 'center',
+    marginTop: 1,
   },
   planningCell: {
     borderWidth: 1,
