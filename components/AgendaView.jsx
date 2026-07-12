@@ -23,7 +23,7 @@ export default function AgendaView({
         h => h.greekMonth === greek?.monthId && h.greekDay === greek?.day
       );
       const reminders = remindersForDate(iso, year);
-      const dayEvents = evMap[iso] || [];
+      const dayEvents = (evMap[iso] || []).map(x => x.event);
 
       if (holidays.length === 0 && reminders.length === 0 && dayEvents.length === 0) continue;
 
