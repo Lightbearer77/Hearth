@@ -21,6 +21,7 @@ import DayDetail from './components/DayDetail';
 import EventModal from './components/EventModal';
 import SettingsModal from './components/SettingsModal';
 import { getPermissionStatus, refreshAllNotifications } from './lib/notifications';
+import { durationDays, addDaysISO } from './lib/recurrence';
 
 // ─── ErrorBoundary catches render-phase crashes and shows the error ───
 class ErrorBoundary extends Component {
@@ -120,11 +121,12 @@ function AppContent() {
         onPress: () => {
           // Detach: a standalone draft for this date; on save the series
           // gains an exception for the original slot.
+          const dur = durationDays(evt);
           const draft = {
             ...evt,
             id: newEvent().id,
             date: occurrenceIso,
-            endDate: '',
+            endDate: dur > 0 ? addDaysISO(occurrenceIso, dur) : '',
             recurrence: 'none',
             recurrenceInterval: 1,
             exdates: [],
