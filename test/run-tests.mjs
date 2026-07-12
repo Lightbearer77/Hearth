@@ -29,7 +29,7 @@ const {
   isLeapYear, fmtGreekLong,
 } = await import(pathToFileURL(join(stage, 'constants.mjs')).href);
 const { remindersForDate } = await import(pathToFileURL(join(stage, 'holidays.mjs')).href);
-const { expandOccurrences, occursOn, eventsByDateInRange, recurrenceLabel } = await import(pathToFileURL(join(stage, 'recurrence.mjs')).href);
+const { expandOccurrences, occursOn, eventsByDateInRange, recurrenceLabel, durationDays, addDaysISO } = await import(pathToFileURL(join(stage, 'recurrence.mjs')).href);
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) pass++; else { fail++; console.log('FAIL:', msg); } };
@@ -161,9 +161,9 @@ const mixed = [
   ev({ id: 'd', date: '2026-07-01', recurrence: 'weekly' }),
 ];
 const map7 = eventsByDateInRange(mixed, days7);
-ok(map7['2026-07-08'].map(e=>e.id).sort().join(',') === 'a,b,d', `map Jul8: ${map7['2026-07-08'].map(e=>e.id)}`);
-ok(map7['2026-07-10'].map(e=>e.id).sort().join(',') === 'a,c', `map Jul10: ${map7['2026-07-10'].map(e=>e.id)}`);
-ok(map7['2026-07-06'].map(e=>e.id).join(',') === 'a', `map Jul6: ${map7['2026-07-06'].map(e=>e.id)}`);
+ok(map7['2026-07-08'].map(x=>x.event.id).sort().join(',') === 'a,b,d', `map Jul8: ${map7['2026-07-08'].map(x=>x.event.id)}`);
+ok(map7['2026-07-10'].map(x=>x.event.id).sort().join(',') === 'a,c', `map Jul10: ${map7['2026-07-10'].map(x=>x.event.id)}`);
+ok(map7['2026-07-06'].map(x=>x.event.id).join(',') === 'a', `map Jul6: ${map7['2026-07-06'].map(x=>x.event.id)}`);
 
 // ── 6. Custom intervals + exceptions ──
 // every 3 days
@@ -201,6 +201,47 @@ ok(recurrenceLabel('weekly', 1) === 'Weekly', 'label weekly');
 ok(recurrenceLabel('weekly', 3) === 'Every 3 weeks', 'label every 3 weeks');
 ok(recurrenceLabel('biweekly', 1) === 'Every 2 weeks', 'label legacy biweekly');
 ok(recurrenceLabel('greekMonthly', 2) === 'Every 2 Greek months', 'label greek interval');
+
+// ── 7. Multi-day repeating events ──
+ok(durationDays(ev({ endDate: '2026-07-03' })) === 2, 'durationDays 2');
+ok(durationDays(ev({})) === 0 && durationDays(ev({ endDate: '2026-06-30' })) === 0, 'durationDays guards');
+ok(addDaysISO('2026-07-30', 3) === '2026-08-02', 'addDaysISO month roll');
+
+// weekly, 2-day span: middle + end days covered, day after span not
+const span = ev({ date: '2026-07-08', endDate: '2026-07-10', recurrence: 'weekly' });
+ok(occursOn(span, '2026-07-09') === true,  'span middle day');
+ok(occursOn(span, '2026-07-10') === true,  'span end day');
+ok(occursOn(span, '2026-07-11') === false, 'day after span');
+ok(occursOn(span, '2026-07-16') === true,  'next week middle day');
+ok(occursOn(span, '2026-07-07') === false, 'day before master');
+
+// exdate removes the whole span of that occurrence
+const spanEx = { ...span, exdates: ['2026-07-15'] };
+ok(occursOn(spanEx, '2026-07-16') === false, 'exdated occurrence span removed');
+ok(occursOn(spanEx, '2026-07-22') === true,  'later occurrence unaffected');
+
+// map: lookback — occurrence starting BEFORE the range still covers in-range days
+const aug3 = ['2026-08-01','2026-08-02','2026-08-03'];
+const late = ev({ date: '2026-07-30', endDate: '2026-08-01', recurrence: 'monthly' });
+const mapAug = eventsByDateInRange([late], aug3);
+ok(mapAug['2026-08-01'].length === 1 && mapAug['2026-08-01'][0].isEnd === true && mapAug['2026-08-01'][0].isStart === false,
+   `lookback span tail: ${JSON.stringify(mapAug['2026-08-01'])}`);
+ok(mapAug['2026-08-02'].length === 0, 'no bleed past span end');
+
+// isStart / isEnd flags across a span
+const wk = ['2026-07-06','2026-07-07','2026-07-08','2026-07-09','2026-07-10','2026-07-11','2026-07-12'];
+const mapWk = eventsByDateInRange([span], wk);
+ok(mapWk['2026-07-08'][0].isStart === true  && mapWk['2026-07-08'][0].isEnd === false, 'span start flags');
+ok(mapWk['2026-07-09'][0].isStart === false && mapWk['2026-07-09'][0].isEnd === false, 'span middle flags');
+ok(mapWk['2026-07-10'][0].isStart === false && mapWk['2026-07-10'][0].isEnd === true,  'span end flags');
+
+// overlapping occurrences dedupe: daily repeat, 3-day span → once per day
+const overlap = ev({ recurrence: 'daily', endDate: '2026-07-03' });
+const mapOv = eventsByDateInRange([overlap], ['2026-07-05','2026-07-06']);
+ok(mapOv['2026-07-05'].length === 1 && mapOv['2026-07-06'].length === 1, 'overlap dedupe');
+
+// single-day recurring unaffected by span logic
+ok(eventsByDateInRange([ev({ recurrence: 'weekly', date: '2026-07-08' })], wk)['2026-07-08'][0].isStart === true, 'single-day isStart+isEnd');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
