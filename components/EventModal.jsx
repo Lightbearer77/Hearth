@@ -41,8 +41,8 @@ export default function EventModal({
     const finalForm = { ...form };
     finalForm.recurrenceInterval = Math.max(1, Math.floor(finalForm.recurrenceInterval || 1));
     if ((finalForm.recurrence || 'none') === 'none') finalForm.recurrenceInterval = 1;
-    const repeating = (finalForm.recurrence || 'none') !== 'none';
-    if (repeating || !showEndDate || !finalForm.endDate || finalForm.endDate < finalForm.date) {
+    // Multi-day + repeat may combine: each occurrence keeps this duration.
+    if (!showEndDate || !finalForm.endDate || finalForm.endDate < finalForm.date) {
       finalForm.endDate = '';
     }
     if (!Array.isArray(finalForm.reminders)) finalForm.reminders = [0];
@@ -137,7 +137,7 @@ export default function EventModal({
           </Field>
 
           {/* End Date toggle / picker */}
-          {(form.recurrence || 'none') !== 'none' ? null : !showEndDate ? (
+          {!showEndDate ? (
             <TouchableOpacity
               onPress={() => setShowEndDate(true)}
               style={styles.addEndDateBtn}
@@ -282,7 +282,8 @@ export default function EventModal({
 
             {(form.recurrence || 'none') !== 'none' && (
               <Text style={styles.seriesHint}>
-                {recurrenceLabel(form.recurrence, form.recurrenceInterval || 1)} — series
+                {recurrenceLabel(form.recurrence, form.recurrenceInterval || 1)}
+                {showEndDate && form.endDate ? ' — every occurrence spans the same number of days.' : ''} Series
                 edits apply to every occurrence unless you edit a single one from its day.
               </Text>
             )}
