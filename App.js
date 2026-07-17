@@ -17,6 +17,8 @@ import {
 import SeasonalBanner from './components/SeasonalBanner';
 import MonthView from './components/MonthView';
 import AgendaView from './components/AgendaView';
+import DayView from './components/DayView';
+import SearchOverlay from './components/SearchOverlay';
 import DayDetail from './components/DayDetail';
 import EventModal from './components/EventModal';
 import SettingsModal from './components/SettingsModal';
@@ -64,6 +66,8 @@ function AppContent() {
     return { monthId: t.monthId, year: t.year };
   });
   const [viewMode, setViewMode] = useState('month');
+  const [daySel, setDaySel] = useState(todayISO());
+  const [searchOpen, setSearchOpen] = useState(false);
   const [events, setEvents] = useState([]);
   const [categories, setCategories] = useState([]);
   const [ready, setReady] = useState(false);
@@ -227,10 +231,10 @@ function AppContent() {
     } catch (e) { console.warn('Delete failed', e); }
   }, [bumpNotifications, editingCtx, exdateMaster]);
 
-  const startNewEvent = (isoDate) => {
+  const startNewEvent = (isoDate, startTime) => {
     setSelectedDate(null);
     setEditingCtx(null);
-    setEditingEvent(newEvent({ date: isoDate }));
+    setEditingEvent(newEvent({ date: isoDate, ...(startTime ? { startTime } : {}) }));
   };
 
   const refreshCategories = useCallback(async () => {
@@ -278,6 +282,7 @@ function AppContent() {
       <SeasonalBanner
         meta={monthMeta} year={view.year}
         viewMode={viewMode} onSetViewMode={setViewMode}
+        onSearch={() => setSearchOpen(true)}
         onPrev={goPrev} onNext={goNext} onToday={goToday}
         onOpenSettings={() => setShowSettings(true)}
       />
@@ -287,14 +292,38 @@ function AppContent() {
           themeColor={monthMeta.theme.color} events={events}
           categories={categories} onDayClick={setSelectedDate} today={todayISO()}
         />
-      ) : (
+      ) : viewMode === 'agenda' ? (
         <AgendaView
           monthId={view.monthId} year={view.year}
           themeColor={monthMeta.theme.color} events={events}
           categories={categories} onDayClick={setSelectedDate}
           onEventClick={openEventForEdit} today={todayISO()}
         />
+      ) : (
+        <DayView
+          isoDate={daySel} events={events} categories={categories}
+          themeColor={monthMeta.theme.color}
+          onPrev={() => setDaySel(d => addDaysISO(d, -1))}
+          onNext={() => setDaySel(d => addDaysISO(d, 1))}
+          onToday={() => setDaySel(todayISO())}
+          onEdit={openEventForEdit}
+          onAddAt={(iso, t) => startNewEvent(iso, t)}
+        />
       )}
+      {searchOpen && (
+        <SearchOverlay
+          events={events} categories={categories}
+          onClose={() => setSearchOpen(false)}
+          onPick={(evt) => {
+            setSearchOpen(false);
+            const gg = gregToGreek(evt.date);
+            if (gg && !gg.isPlanningDay) setView({ monthId: gg.monthId, year: gg.year });
+            setDaySel(evt.date);
+            setViewMode('day');
+          }}
+        />
+      )}
+
       {selectedDate && (
         <DayDetail
           isoDate={selectedDate} events={events} categories={categories}
