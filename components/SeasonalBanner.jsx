@@ -4,7 +4,7 @@ import { fmtGreg } from '../lib/constants';
 import { ASATRU_HOLIDAYS } from '../lib/holidays';
 
 export default function SeasonalBanner({
-  meta, year, viewMode, onSetViewMode,
+  meta, year, viewMode, onSetViewMode, onSearch,
   onPrev, onNext, onToday, onOpenSettings,
 }) {
   const { name, letter, theme, range } = meta;
@@ -23,6 +23,7 @@ export default function SeasonalBanner({
         {/* Invisible spacer mirrors the gear so TODAY stays centered */}
         <View style={styles.sideGroup}>
           <View style={styles.navBtn} />
+          <View style={styles.navBtn} />
           <TouchableOpacity onPress={onPrev} style={styles.navBtn}>
             <Text style={styles.navBtnText}>‹</Text>
           </TouchableOpacity>
@@ -35,6 +36,9 @@ export default function SeasonalBanner({
         <View style={styles.sideGroup}>
           <TouchableOpacity onPress={onNext} style={styles.navBtn}>
             <Text style={styles.navBtnText}>›</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onSearch} style={styles.navBtn}>
+            <Text style={styles.gearBtnText}>🔍</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={onOpenSettings} style={styles.navBtn}>
             <Text style={styles.gearBtnText}>⚙</Text>
@@ -75,6 +79,12 @@ export default function SeasonalBanner({
             onPress={() => onSetViewMode('agenda')}
             color={theme.color}
             label="AGENDA"
+          />
+          <ToggleBtn
+            active={viewMode === 'day'}
+            onPress={() => onSetViewMode('day')}
+            color={theme.color}
+            label="DAY"
           />
         </View>
       </View>
