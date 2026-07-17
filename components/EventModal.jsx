@@ -20,6 +20,7 @@ const REMINDER_OPTIONS = [
 
 export default function EventModal({
   event, categories, onSave, onDelete, onClose, occurrenceMode = false,
+  futureMode = false,
 }) {
   const [form, setForm] = useState(event);
   const [showEndDate, setShowEndDate] = useState(!!event.endDate);
@@ -40,7 +41,14 @@ export default function EventModal({
     }
     const finalForm = { ...form };
     finalForm.recurrenceInterval = Math.max(1, Math.floor(finalForm.recurrenceInterval || 1));
-    if ((finalForm.recurrence || 'none') === 'none') finalForm.recurrenceInterval = 1;
+    if ((finalForm.recurrence || 'none') === 'none') {
+      finalForm.recurrenceInterval = 1;
+      finalForm.recurrenceUntil = '';
+    }
+    if (finalForm.recurrenceUntil && finalForm.recurrenceUntil < finalForm.date) {
+      Alert.alert('Series end is before the start date');
+      return;
+    }
     // Multi-day + repeat may combine: each occurrence keeps this duration.
     if (!showEndDate || !finalForm.endDate || finalForm.endDate < finalForm.date) {
       finalForm.endDate = '';
@@ -52,9 +60,11 @@ export default function EventModal({
   const handleDelete = () => {
     const repeating = (form.recurrence || 'none') !== 'none';
     Alert.alert(
-      occurrenceMode ? 'Remove this occurrence?'
+      futureMode ? 'Delete this and all future occurrences?'
+        : occurrenceMode ? 'Remove this occurrence?'
         : repeating ? 'Delete repeating event?' : 'Delete event?',
-      occurrenceMode ? 'The rest of the series is unaffected.'
+      futureMode ? 'Past occurrences are unaffected.'
+        : occurrenceMode ? 'The rest of the series is unaffected.'
         : repeating
           ? 'This removes the entire series — every occurrence.'
           : 'This cannot be undone.',
@@ -95,7 +105,7 @@ export default function EventModal({
             <Text style={styles.headerBtnText}>← CANCEL</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
-            {occurrenceMode ? 'Edit Occurrence' : isNew ? 'New Event' : 'Edit Event'}
+            {futureMode ? 'This & Future' : occurrenceMode ? 'Edit Occurrence' : isNew ? 'New Event' : 'Edit Event'}
           </Text>
           <TouchableOpacity onPress={handleSave} style={styles.headerBtn}>
             <Text style={[styles.headerBtnText, { color: COLORS.accent, fontWeight: '600' }]}>
@@ -281,10 +291,50 @@ export default function EventModal({
             )}
 
             {(form.recurrence || 'none') !== 'none' && (
+              !form.recurrenceUntil ? (
+                <TouchableOpacity
+                  onPress={() => setDatePicker('until')}
+                  style={styles.addEndDateBtn}
+                >
+                  <Text style={styles.addEndDateText}>+ END SERIES ON DATE</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={{ marginTop: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => setDatePicker('until')}
+                    style={styles.dateBtn}
+                  >
+                    <Text style={styles.dateBtnText}>
+                      Ends {fmtGregLong(form.recurrenceUntil)}
+                    </Text>
+                  </TouchableOpacity>
+                  <View style={styles.endDateRow}>
+                    {(() => {
+                      const g = gregToGreek(form.recurrenceUntil);
+                      return g ? (
+                        <Text style={styles.dateGreek}>
+                          {g.isPlanningDay ? 'Planning Day' : `${g.monthName} ${g.day}`}
+                        </Text>
+                      ) : null;
+                    })()}
+                    <TouchableOpacity
+                      onPress={() => update('recurrenceUntil', '')}
+                      style={{ marginLeft: 'auto' }}
+                    >
+                      <Text style={styles.removeBtnText}>REMOVE</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )
+            )}
+            {(form.recurrence || 'none') !== 'none' && (
               <Text style={styles.seriesHint}>
                 {recurrenceLabel(form.recurrence, form.recurrenceInterval || 1)}
-                {showEndDate && form.endDate ? ' — every occurrence spans the same number of days.' : ''} Series
-                edits apply to every occurrence unless you edit a single one from its day.
+                {form.recurrenceUntil ? ` until ${fmtGregLong(form.recurrenceUntil)}.` : ''}
+                {showEndDate && form.endDate ? ' — every occurrence spans the same number of days.' : ''}{' '}
+                {futureMode
+                  ? 'Saving applies these settings to this and all future occurrences; past ones keep the old ones.'
+                  : 'Series edits apply to every occurrence unless you edit a single one from its day.'}
               </Text>
             )}
           </Field>
@@ -428,7 +478,7 @@ export default function EventModal({
           {!isNew && (
             <TouchableOpacity onPress={handleDelete} style={styles.deleteBtn}>
               <Text style={styles.deleteBtnText}>
-                {occurrenceMode ? 'DELETE THIS OCCURRENCE' : 'DELETE EVENT'}
+                {futureMode ? 'DELETE THIS AND FUTURE' : occurrenceMode ? 'DELETE THIS OCCURRENCE' : 'DELETE EVENT'}
               </Text>
             </TouchableOpacity>
           )}
@@ -452,6 +502,20 @@ export default function EventModal({
             onChange={(e, d) => handleDateChange('end', e, d)}
           />
         )}
+        {datePicker === 'until' && (
+          <DateTimePicker
+            value={new Date((form.recurrenceUntil || form.date) + 'T12:00:00')}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={(e, d) => {
+              setDatePicker(null);
+              if (e.type === 'dismissed' || !d) return;
+              const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+              update('recurrenceUntil', iso);
+            }}
+          />
+        )}
+
         {datePicker === 'startTime' && (
           <DateTimePicker
             value={timeToDate(form.startTime)}
