@@ -29,7 +29,7 @@ const {
   isLeapYear, fmtGreekLong,
 } = await import(pathToFileURL(join(stage, 'constants.mjs')).href);
 const { remindersForDate } = await import(pathToFileURL(join(stage, 'holidays.mjs')).href);
-const { expandOccurrences, occursOn, eventsByDateInRange, recurrenceLabel, durationDays, addDaysISO } = await import(pathToFileURL(join(stage, 'recurrence.mjs')).href);
+const { expandOccurrences, occursOn, eventsByDateInRange, recurrenceLabel, durationDays, addDaysISO, splitSeriesAt } = await import(pathToFileURL(join(stage, 'recurrence.mjs')).href);
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) pass++; else { fail++; console.log('FAIL:', msg); } };
@@ -242,6 +242,58 @@ ok(mapOv['2026-07-05'].length === 1 && mapOv['2026-07-06'].length === 1, 'overla
 
 // single-day recurring unaffected by span logic
 ok(eventsByDateInRange([ev({ recurrence: 'weekly', date: '2026-07-08' })], wk)['2026-07-08'][0].isStart === true, 'single-day isStart+isEnd');
+
+// ══ Series end date (recurrence_until) ══
+const mkEvt = (over = {}) => ({ id: 'u1', title: 'U', date: '2026-07-01', endDate: '',
+  recurrence: 'daily', recurrenceInterval: 1, recurrenceUntil: '', exdates: [], ...over });
+
+ok(expandOccurrences(mkEvt({ recurrenceUntil: '2026-07-05' }), '2026-07-01', '2026-07-31').length === 5,
+   'until: daily clipped to 5');
+ok(expandOccurrences(mkEvt({ recurrenceUntil: '2026-07-03' }), '2026-07-01', '2026-07-31').join(',')
+   === '2026-07-01,2026-07-02,2026-07-03', 'until: inclusive on the until day');
+ok(expandOccurrences(mkEvt({ recurrenceUntil: '2026-06-30' }), '2026-06-01', '2026-07-31').length === 0,
+   'until before master: empty series');
+ok(expandOccurrences(mkEvt({ recurrence: 'weekly', recurrenceInterval: 2, recurrenceUntil: '2026-08-01' }),
+   '2026-07-01', '2026-09-01').join(',') === '2026-07-01,2026-07-15,2026-07-29',
+   'until: weekly x2 clipped');
+ok(expandOccurrences(mkEvt({ recurrence: 'weekly', recurrenceUntil: '2026-07-07' }),
+   '2026-07-01', '2026-07-31').join(',') === '2026-07-01', 'until between occurrences');
+ok(expandOccurrences(mkEvt({ recurrence: 'monthly', date: '2026-01-31', recurrenceUntil: '2026-05-31' }),
+   '2026-01-01', '2026-12-31').join(',') === '2026-01-31,2026-03-31,2026-05-31',
+   'until: monthly (31st) clipped');
+ok(expandOccurrences(mkEvt({ recurrence: 'greekMonthly', date: '2026-06-21', recurrenceUntil: '2026-07-20' }),
+   '2026-06-01', '2026-12-31').join(',') === '2026-06-21,2026-07-19',
+   'until: greekMonthly Eta 4 -> Theta 4 then stop');
+ok(occursOn(mkEvt({ recurrenceUntil: '2026-07-05' }), '2026-07-05') === true, 'occursOn: on until day');
+ok(occursOn(mkEvt({ recurrenceUntil: '2026-07-05' }), '2026-07-06') === false, 'occursOn: after until');
+const spanU = mkEvt({ endDate: '2026-07-03', recurrenceUntil: '2026-07-02' }); // dur 2
+ok(occursOn(spanU, '2026-07-04') === true,
+   'until governs START dates: span starting on until still covers later days');
+ok(occursOn(spanU, '2026-07-05') === false, 'span coverage ends with the last valid start + duration');
+ok(expandOccurrences(mkEvt({ recurrence: 'daily', recurrenceInterval: 3, recurrenceUntil: '2026-07-08' }),
+   '2026-07-01', '2026-07-31').join(',') === '2026-07-01,2026-07-04,2026-07-07', 'until: every 3 days');
+ok(expandOccurrences(mkEvt({ recurrenceUntil: '' }), '2026-07-01', '2026-07-05').length === 5,
+   'empty until: open-ended unchanged');
+
+// ══ splitSeriesAt ══
+const master = mkEvt({ id: 'm1', recurrence: 'weekly',
+  exdates: ['2026-07-08', '2026-07-22'], recurrenceUntil: '2026-09-01' });
+const { truncatedMaster: tm, newMaster: nm } = splitSeriesAt(master, '2026-07-15', 'new1');
+ok(tm.recurrenceUntil === '2026-07-14', 'split: old series ends day before pivot');
+ok(tm.exdates.join(',') === '2026-07-08', 'split: past exdates stay on old master');
+ok(tm.id === 'm1' && tm.date === '2026-07-01', 'split: old master identity unchanged');
+ok(nm.id === 'new1' && nm.date === '2026-07-15', 'split: new master at pivot under new id');
+ok(nm.exdates.join(',') === '2026-07-22', 'split: future exdates migrate');
+ok(nm.recurrence === 'weekly' && nm.recurrenceUntil === '2026-09-01',
+   'split: recurrence + inherited until preserved');
+const spanMaster = mkEvt({ id: 'm2', endDate: '2026-07-03', recurrence: 'weekly', recurrenceUntil: '' });
+const spl2 = splitSeriesAt(spanMaster, '2026-07-15', 'new2');
+ok(spl2.newMaster.endDate === '2026-07-17', 'split: duration preserved on new master');
+const spl3 = splitSeriesAt(mkEvt({ id: 'm3' }), '2026-07-01', 'new3');
+ok(spl3.truncatedMaster === null, 'split at first occurrence: old master deleted, not truncated');
+ok(spl3.newMaster.date === '2026-07-01' && spl3.newMaster.id === 'new3', 'split at first: clean relocation');
+const spl4 = splitSeriesAt(mkEvt({ id: 'm4', exdates: ['2026-07-15'] }), '2026-07-15', 'new4');
+ok(spl4.newMaster.exdates.join(',') === '2026-07-15', 'split: exdate exactly at pivot goes to new master');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
