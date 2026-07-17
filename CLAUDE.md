@@ -60,18 +60,24 @@ EAS `preview` profile → standalone APK. Owner `lightbearer77`.
   events sort to the top slot), AgendaView, DayDetail, EventModal (quick
   chips + Custom N×unit; multi-select reminders; occurrence mode),
   SettingsModal.
-- `test/run-tests.mjs` — **3,481 assertions**, zero deps, self-bootstrapping.
-  `npm test`. Calendar or recurrence changes must keep it green AND extend it.
+- `test/run-tests.mjs` — zero deps, self-bootstrapping.
+  `npm test` → **3,504 assertions**. Calendar or recurrence changes must
+  keep it green AND extend it.
 
 ## Punch list (settled with Connor — build in this order)
 
-1. **Series end date** — "repeat until [date]". Schema v4:
-   `recurrence_until TEXT NOT NULL DEFAULT ''` (ISO, inclusive). Guard every
-   branch of `expandOccurrences`. "Until" field in EventModal when
-   repeating. Extend `recurrenceLabel`.
-2. **"This and all future occurrences"** — third chooser option in App.js.
-   Set old master's `recurrence_until` to the day before the pivot; clone a
-   new master at the pivot with the same settings; migrate exdates ≥ pivot.
+1. ~~Series end date~~ — DONE in v1.5.0. Schema v4 `recurrence_until`
+   (ISO, inclusive, governs occurrence START dates — a span starting on
+   the until-date still runs its full duration, same semantics as exdates).
+   Single choke point: the range-end clamp at the top of
+   `expandOccurrences` covers every mode branch.
+2. ~~"This and all future occurrences"~~ — DONE in v1.5.0.
+   `splitSeriesAt(master, pivotIso, newId)` in lib/recurrence.js is the
+   pure, tested source of truth: old master truncated to pivot−1 with
+   past exdates, new master cloned at pivot with future exdates and
+   inherited settings; pivot-at-first-occurrence returns a null truncated
+   master (caller deletes). Both the chooser draft and the save/delete
+   branches in App.js go through it — keep it that way.
 3. **Day view** — hour timeline (00–24), events positioned by
    startTime/endTime, all-day strip pinned top; third chip beside
    MONTH/AGENDA.
