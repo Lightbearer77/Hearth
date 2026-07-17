@@ -21,7 +21,7 @@ import DayDetail from './components/DayDetail';
 import EventModal from './components/EventModal';
 import SettingsModal from './components/SettingsModal';
 import { getPermissionStatus, refreshAllNotifications } from './lib/notifications';
-import { durationDays, addDaysISO } from './lib/recurrence';
+import { durationDays, addDaysISO, splitSeriesAt } from './lib/recurrence';
 
 // ─── ErrorBoundary catches render-phase crashes and shows the error ───
 class ErrorBoundary extends Component {
@@ -137,6 +137,14 @@ function AppContent() {
         },
       },
       {
+        text: 'This & future',
+        onPress: () => {
+          const { newMaster } = splitSeriesAt(evt, occurrenceIso, newEvent().id);
+          setEditingCtx({ mode: 'future', masterId: evt.id, occurrenceIso });
+          setEditingEvent(newMaster);
+        },
+      },
+      {
         text: 'Entire series',
         onPress: () => { setEditingCtx(null); setEditingEvent(evt); },
       },
@@ -167,7 +175,16 @@ function AppContent() {
   const handleSaveEvent = useCallback(async (evt) => {
     try {
       await dbSaveEvent(evt);
-      if (editingCtx?.mode === 'occurrence' && editingCtx.masterId) {
+      if (editingCtx?.mode === 'future' && editingCtx.masterId) {
+        // New master already saved above; end the old series the day before.
+        const master = events.find(e => e.id === editingCtx.masterId);
+        if (master) {
+          const { truncatedMaster } = splitSeriesAt(master, editingCtx.occurrenceIso, master.id);
+          if (truncatedMaster) await dbSaveEvent(truncatedMaster);
+          else await dbDeleteEvent(master.id);
+        }
+        setEvents(await getAllEvents());
+      } else if (editingCtx?.mode === 'occurrence' && editingCtx.masterId) {
         await exdateMaster(editingCtx.masterId, editingCtx.occurrenceIso);
         setEvents(await getAllEvents());
       } else {
@@ -184,7 +201,18 @@ function AppContent() {
 
   const handleDeleteEvent = useCallback(async (id) => {
     try {
-      if (editingCtx?.mode === 'occurrence' && editingCtx.masterId) {
+      if (editingCtx?.mode === 'future' && editingCtx.masterId) {
+        // Draft was never persisted — deleting "this and future" just ends
+        // the old series the day before the pivot (or removes it entirely
+        // when the pivot is the first occurrence).
+        const master = events.find(e => e.id === editingCtx.masterId);
+        if (master) {
+          const { truncatedMaster } = splitSeriesAt(master, editingCtx.occurrenceIso, master.id);
+          if (truncatedMaster) await dbSaveEvent(truncatedMaster);
+          else await dbDeleteEvent(master.id);
+        }
+        setEvents(await getAllEvents());
+      } else if (editingCtx?.mode === 'occurrence' && editingCtx.masterId) {
         // Draft was never persisted — removing the occurrence just adds an
         // exception date to the series.
         await exdateMaster(editingCtx.masterId, editingCtx.occurrenceIso);
@@ -279,6 +307,7 @@ function AppContent() {
         <EventModal
           event={editingEvent} categories={categories}
           occurrenceMode={editingCtx?.mode === 'occurrence'}
+          futureMode={editingCtx?.mode === 'future'}
           onSave={handleSaveEvent} onDelete={handleDeleteEvent}
           onClose={() => { setEditingEvent(null); setEditingCtx(null); }}
         />
