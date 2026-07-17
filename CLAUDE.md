@@ -61,7 +61,7 @@ EAS `preview` profile → standalone APK. Owner `lightbearer77`.
   chips + Custom N×unit; multi-select reminders; occurrence mode),
   SettingsModal.
 - `test/run-tests.mjs` — zero deps, self-bootstrapping.
-  `npm test` → **3,504 assertions**. Calendar or recurrence changes must
+  `npm test` → **3,519 assertions**. Calendar or recurrence changes must
   keep it green AND extend it.
 
 ## Punch list (settled with Connor — build in this order)
@@ -78,11 +78,18 @@ EAS `preview` profile → standalone APK. Owner `lightbearer77`.
    inherited settings; pivot-at-first-occurrence returns a null truncated
    master (caller deletes). Both the chooser draft and the save/delete
    branches in App.js go through it — keep it that way.
-3. **Day view** — hour timeline (00–24), events positioned by
-   startTime/endTime, all-day strip pinned top; third chip beside
-   MONTH/AGENDA.
-4. **Search** — in-memory filter over title/notes/location; banner icon;
-   results as (Greek date · title) rows opening DayDetail.
+3. ~~Day view~~ — DONE in v1.6.0. Hour timeline with the overlap layout
+   handled by `layoutDayEvents` in lib/dayLayout.js (pure, tested: cluster
+   detection, greedy column assignment, touching-events-don't-overlap).
+   Timed single-day events go on the timeline; all-day, untimed, and
+   multi-day occurrences go to the top strip. Tap an empty hour to create.
+4. ~~Search~~ — DONE in v1.6.0. `searchEvents` (pure, tested) over
+   title/description/location; 🔍 in the banner; picking a result jumps
+   the day view (and month context) to the event's date.
+
+**The original punch list is COMPLETE.** Remaining Hearth work is only the
+deferred Feb-29 cell decision (before 2028) and the EventModal
+keyboard-clip check.
 
 Known deferred: **Feb 29 has no dedicated grid cell** (Gamma 3's cell
 represents Feb 28+29 in leap years; `isLeapEcho` exists for a future
