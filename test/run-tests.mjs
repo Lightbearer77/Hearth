@@ -18,7 +18,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const stage = mkdtempSync(join(tmpdir(), 'hearth-test-'));
 
-for (const name of ['constants', 'holidays', 'recurrence']) {
+for (const name of ['constants', 'holidays', 'recurrence', 'dayLayout']) {
   const src = readFileSync(join(root, 'lib', `${name}.js`), 'utf8')
     .replace(/from '\.\/constants'/g, "from './constants.mjs'");
   writeFileSync(join(stage, `${name}.mjs`), src);
@@ -30,6 +30,7 @@ const {
 } = await import(pathToFileURL(join(stage, 'constants.mjs')).href);
 const { remindersForDate } = await import(pathToFileURL(join(stage, 'holidays.mjs')).href);
 const { expandOccurrences, occursOn, eventsByDateInRange, recurrenceLabel, durationDays, addDaysISO, splitSeriesAt } = await import(pathToFileURL(join(stage, 'recurrence.mjs')).href);
+const { layoutDayEvents, searchEvents } = await import(pathToFileURL(join(stage, 'dayLayout.mjs')).href);
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) pass++; else { fail++; console.log('FAIL:', msg); } };
@@ -294,6 +295,47 @@ ok(spl3.truncatedMaster === null, 'split at first occurrence: old master deleted
 ok(spl3.newMaster.date === '2026-07-01' && spl3.newMaster.id === 'new3', 'split at first: clean relocation');
 const spl4 = splitSeriesAt(mkEvt({ id: 'm4', exdates: ['2026-07-15'] }), '2026-07-15', 'new4');
 ok(spl4.newMaster.exdates.join(',') === '2026-07-15', 'split: exdate exactly at pivot goes to new master');
+
+// ══ Day layout: overlap clustering + column assignment ══
+const L = (arr) => layoutDayEvents(arr.map(([id, s, e]) => ({ id, startMin: s, endMin: e })));
+const byId = (res) => Object.fromEntries(res.map(r => [r.id, r]));
+
+let lay = byId(L([['a', 540, 600], ['b', 720, 780]]));
+ok(lay.a.cols === 1 && lay.b.cols === 1, 'layout: disjoint events full width');
+
+lay = byId(L([['a', 540, 660], ['b', 600, 700]]));
+ok(lay.a.cols === 2 && lay.b.cols === 2 && lay.a.col !== lay.b.col, 'layout: overlapping pair splits');
+
+lay = byId(L([['a', 540, 600], ['b', 600, 660]]));
+ok(lay.a.cols === 1 && lay.b.cols === 1, 'layout: touching events do not overlap');
+
+lay = byId(L([['a', 540, 660], ['b', 600, 720], ['c', 660, 780]]));
+ok(lay.a.cols === 2 && lay.b.cols === 2 && lay.c.cols === 2, 'layout: chained cluster shares width');
+ok(lay.a.col === 0 && lay.b.col === 1 && lay.c.col === 0, 'layout: chain reuses freed column');
+
+lay = byId(L([['a', 540, 700], ['b', 560, 700], ['c', 580, 700]]));
+ok(lay.a.cols === 3 && new Set([lay.a.col, lay.b.col, lay.c.col]).size === 3, 'layout: triple stack three columns');
+
+lay = byId(L([['a', 540, 660], ['b', 600, 700], ['c', 720, 780], ['d', 730, 790]]));
+ok(lay.a.cols === 2 && lay.c.cols === 2 && lay.c.col === 0, 'layout: clusters independent, columns reset');
+
+ok(L([]).length === 0, 'layout: empty input');
+lay = byId(L([['a', 540, 540]]));
+ok(lay.a.cols === 1, 'layout: zero-duration event tolerated');
+
+// ══ searchEvents ══
+const sEvts = [
+  { id: 's1', title: 'Blot ceremony', description: '', location: '', date: '2026-03-01' },
+  { id: 's2', title: 'Dentist', description: 'bring insurance CARD', location: '', date: '2026-02-01' },
+  { id: 's3', title: 'Gym', description: '', location: 'Layton rec center', date: '2026-01-15' },
+];
+ok(searchEvents(sEvts, 'blot').length === 1, 'search: title case-insensitive');
+ok(searchEvents(sEvts, 'card')[0].id === 's2', 'search: description match');
+ok(searchEvents(sEvts, 'layton')[0].id === 's3', 'search: location match');
+ok(searchEvents(sEvts, '  ').length === 0, 'search: whitespace query empty');
+ok(searchEvents(sEvts, 'zzz').length === 0, 'search: no matches');
+const sAll = searchEvents(sEvts, 'e');
+ok(sAll.length === 3 && sAll[0].id === 's3', 'search: results sorted by date');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
