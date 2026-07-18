@@ -9,6 +9,9 @@ import {
 import { ASATRU_HOLIDAYS, remindersForDate } from '../lib/holidays';
 import { categoryById } from '../lib/storage';
 import { eventsByDateInRange } from '../lib/recurrence';
+import { sortDayEntries } from '../lib/dayLayout';
+
+// sortDayEntries lives in lib/dayLayout.js (pure + tested).
 
 const CELL_GAP = 2;
 const HORIZONTAL_PADDING = 8;
@@ -36,9 +39,7 @@ export default function MonthView({ monthId, year, themeColor, events, categorie
           h => h.greekMonth === greek?.monthId && h.greekDay === greek?.day
         ),
         reminders: remindersForDate(iso),
-        entries: (evMap[iso] || []).slice().sort(
-          (a, b) => Number(a.isStart && a.isEnd) - Number(b.isStart && b.isEnd)
-        ),
+        entries: sortDayEntries(evMap[iso] || []),
       };
     }
     return map;
