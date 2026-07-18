@@ -102,9 +102,13 @@ keyboard-clip check.
 Known deferred: **Feb 29 has no dedicated grid cell** (Gamma 3's cell
 represents Feb 28+29 in leap years; `isLeapEcho` exists for a future
 "28·29" treatment). First real leap year is 2028 — decide before then.
-Also: check EventModal for the keyboard-clipping bug found in Forge's
-editors (low inputs hidden behind the keyboard; KeyboardAvoidingView
-offset/inset tuning).
+Keyboard clipping FIXED in v1.7.2: the bug was
+`behavior={Platform.OS === 'ios' ? 'padding' : undefined}` — undefined means
+KeyboardAvoidingView is inert on Android. Fix = `'height'` on Android, plus
+`keyboardShouldPersistTaps="handled"` (so SAVE registers first-tap with the
+keyboard up) and bodyContent paddingBottom 220 so the deepest input
+(Description) can scroll clear. The SAME bug pattern exists in Forge's
+TaskEditor/MilestoneEditor — apply the identical fix there.
 
 ## Working rules (hard-won; violating these cost days)
 
