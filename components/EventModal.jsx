@@ -9,14 +9,31 @@ import { gregToGreek, fmtGregLong } from '../lib/constants';
 import { categoryById } from '../lib/storage';
 import { RECURRENCE_OPTIONS, CUSTOM_UNITS, recurrenceLabel } from '../lib/recurrence';
 
-const REMINDER_OPTIONS = [
-  { value: null, label: 'None' },
-  { value: 0,    label: 'At start' },
-  { value: 10,   label: '10 min before' },
-  { value: 30,   label: '30 min before' },
-  { value: 60,   label: '1 hour before' },
-  { value: 1440, label: '1 day before' },
+// Quick-add presets (minutes before start). Custom values go beyond these.
+const REMINDER_PRESETS = [
+  { value: 0,     label: 'At start' },
+  { value: 10,    label: '10 min' },
+  { value: 30,    label: '30 min' },
+  { value: 60,    label: '1 hour' },
+  { value: 1440,  label: '1 day' },
+  { value: 10080, label: '1 week' },
 ];
+
+const REMINDER_UNITS = [
+  { id: 'min',  label: 'min',   mult: 1 },
+  { id: 'hour', label: 'hours', mult: 60 },
+  { id: 'day',  label: 'days',  mult: 1440 },
+  { id: 'week', label: 'weeks', mult: 10080 },
+];
+
+// Human label for any minute offset, including arbitrary custom values.
+const reminderLabel = (mins) => {
+  if (mins === 0) return 'At start of event';
+  if (mins % 10080 === 0) { const n = mins / 10080; return `${n} week${n === 1 ? '' : 's'} before`; }
+  if (mins % 1440 === 0)  { const n = mins / 1440;  return `${n} day${n === 1 ? '' : 's'} before`; }
+  if (mins % 60 === 0)    { const n = mins / 60;    return `${n} hour${n === 1 ? '' : 's'} before`; }
+  return `${mins} min before`;
+};
 
 export default function EventModal({
   event, categories, onSave, onDelete, onClose, occurrenceMode = false,
@@ -25,6 +42,9 @@ export default function EventModal({
   const [form, setForm] = useState(event);
   const [showEndDate, setShowEndDate] = useState(!!event.endDate);
   const [customOpen, setCustomOpen] = useState((event.recurrenceInterval || 1) > 1);
+  const [remOpen, setRemOpen] = useState(false);
+  const [remValue, setRemValue] = useState('15');
+  const [remUnit, setRemUnit] = useState('min');
   const [datePicker, setDatePicker] = useState(null); // 'start' | 'end' | 'startTime' | 'endTime' | null
   const isNew = !event.title && event.createdAt && (Date.now() - event.createdAt < 5000);
 
@@ -340,41 +360,116 @@ export default function EventModal({
           </Field>
           )}
 
-          {/* Reminder */}
-          <Field label="Reminder">
-            <View style={styles.categoryGrid}>
-              {REMINDER_OPTIONS.map(opt => {
-                const cur = Array.isArray(form.reminders) ? form.reminders : [];
-                const active = opt.value === null ? cur.length === 0 : cur.includes(opt.value);
-                return (
-                  <TouchableOpacity
-                    key={String(opt.value)}
-                    onPress={() => {
-                      if (opt.value === null) { update('reminders', []); return; }
-                      const cur = Array.isArray(form.reminders) ? form.reminders : [];
-                      const next = cur.includes(opt.value)
-                        ? cur.filter(v => v !== opt.value)
-                        : [...cur, opt.value].sort((a, b) => a - b);
-                      update('reminders', next);
-                    }}
-                    style={[
-                      styles.categoryChip,
-                      {
-                        backgroundColor: active ? `${COLORS.accent}22` : COLORS.bgSurface,
-                        borderColor: active ? COLORS.accent : COLORS.borderMid,
-                      },
-                    ]}
-                  >
-                    <Text style={[
-                      styles.categoryName,
-                      { color: active ? COLORS.accent : COLORS.textMuted },
-                    ]}>
-                      {opt.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+          {/* Reminders — stacked bin, Proton-style */}
+          <Field label="Reminders">
+            {(() => {
+              const cur = Array.isArray(form.reminders) ? form.reminders : [];
+              const addOffset = (mins) => {
+                if (!Number.isFinite(mins) || mins < 0) return;
+                const c = Array.isArray(form.reminders) ? form.reminders : [];
+                if (c.includes(mins)) return;
+                update('reminders', [...c, mins].sort((a, b) => a - b));
+              };
+              const removeOffset = (mins) =>
+                update('reminders', cur.filter(v => v !== mins));
+
+              return (
+                <View>
+                  {/* The bin: one row per active reminder */}
+                  {cur.length === 0 ? (
+                    <Text style={styles.reminderEmpty}>No reminders — this event won't notify.</Text>
+                  ) : (
+                    <View style={styles.reminderBin}>
+                      {cur.map(mins => (
+                        <View key={mins} style={styles.reminderRow}>
+                          <Text style={styles.reminderBell}>🔔</Text>
+                          <Text style={styles.reminderRowLabel}>{reminderLabel(mins)}</Text>
+                          <TouchableOpacity
+                            onPress={() => removeOffset(mins)}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          >
+                            <Text style={styles.reminderRemove}>✕</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {/* Quick-add presets (hidden once already added) */}
+                  <View style={styles.reminderPresetRow}>
+                    {REMINDER_PRESETS.filter(p => !cur.includes(p.value)).map(p => (
+                      <TouchableOpacity
+                        key={p.value}
+                        onPress={() => addOffset(p.value)}
+                        style={styles.reminderPreset}
+                      >
+                        <Text style={styles.reminderPresetText}>+ {p.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                    <TouchableOpacity
+                      onPress={() => setRemOpen(o => !o)}
+                      style={[styles.reminderPreset, remOpen && { borderColor: COLORS.accent }]}
+                    >
+                      <Text style={[styles.reminderPresetText, remOpen && { color: COLORS.accent }]}>
+                        + Custom
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Custom composer: value + unit, mirrors the recurrence row */}
+                  {remOpen && (
+                    <View style={styles.customRow}>
+                      <TextInput
+                        value={remValue}
+                        onChangeText={(t) => setRemValue(t.replace(/[^0-9]/g, '').slice(0, 4))}
+                        keyboardType="number-pad"
+                        maxLength={4}
+                        style={styles.customInput}
+                      />
+                      <View style={styles.customUnits}>
+                        {REMINDER_UNITS.map(u => {
+                          const active = remUnit === u.id;
+                          return (
+                            <TouchableOpacity
+                              key={u.id}
+                              onPress={() => setRemUnit(u.id)}
+                              style={[
+                                styles.categoryChip,
+                                {
+                                  backgroundColor: active ? `${COLORS.accent}22` : COLORS.bgSurface,
+                                  borderColor: active ? COLORS.accent : COLORS.borderMid,
+                                },
+                              ]}
+                            >
+                              <Text style={[
+                                styles.categoryName,
+                                { color: active ? COLORS.accent : COLORS.textMuted },
+                              ]}>
+                                {u.label}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const n = parseInt(remValue, 10);
+                          const unit = REMINDER_UNITS.find(u => u.id === remUnit);
+                          if (Number.isFinite(n) && unit) {
+                            addOffset(n * unit.mult);
+                            setRemOpen(false);
+                            setRemValue('15');
+                          }
+                        }}
+                        style={styles.reminderAddBtn}
+                      >
+                        <Text style={styles.reminderAddBtnText}>ADD</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
           </Field>
 
           {/* Time */}
@@ -717,6 +812,61 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: FONTS.mono,
     letterSpacing: 1.2,
+  },
+  reminderBin: {
+    marginBottom: 8,
+  },
+  reminderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.bgSurface,
+    borderWidth: 1,
+    borderColor: COLORS.borderMid,
+    borderRadius: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    marginBottom: 5,
+  },
+  reminderBell: { fontSize: 12, marginRight: 8 },
+  reminderRowLabel: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.textPrimary,
+  },
+  reminderRemove: { fontSize: 14, color: COLORS.textMuted, paddingLeft: 8 },
+  reminderEmpty: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    color: COLORS.textMuted,
+    marginBottom: 8,
+  },
+  reminderPresetRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  reminderPreset: {
+    borderWidth: 1,
+    borderColor: COLORS.borderMid,
+    borderRadius: 4,
+    borderStyle: 'dashed',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  reminderPresetText: { fontSize: 11, color: COLORS.textMuted },
+  reminderAddBtn: {
+    backgroundColor: COLORS.bgElevated,
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    justifyContent: 'center',
+  },
+  reminderAddBtnText: {
+    fontSize: 10,
+    letterSpacing: 1.5,
+    color: COLORS.accent,
   },
   customRow: {
     flexDirection: 'row',
