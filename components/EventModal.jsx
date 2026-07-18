@@ -117,7 +117,7 @@ export default function EventModal({
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={{ flex: 1, backgroundColor: COLORS.bgDeep }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         {/* Header */}
         <View style={styles.header}>
@@ -134,7 +134,12 @@ export default function EventModal({
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
+        <ScrollView
+          style={styles.body}
+          contentContainerStyle={styles.bodyContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
           {/* Title */}
           <Field label="Title">
             <TextInput
@@ -684,7 +689,7 @@ const styles = StyleSheet.create({
   },
 
   body: { flex: 1 },
-  bodyContent: { padding: 16, paddingBottom: 60 },
+  bodyContent: { padding: 16, paddingBottom: 220 },
 
   fieldLabel: {
     fontSize: 10,
