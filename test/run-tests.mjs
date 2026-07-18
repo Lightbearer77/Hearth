@@ -30,7 +30,7 @@ const {
 } = await import(pathToFileURL(join(stage, 'constants.mjs')).href);
 const { remindersForDate } = await import(pathToFileURL(join(stage, 'holidays.mjs')).href);
 const { expandOccurrences, occursOn, eventsByDateInRange, recurrenceLabel, durationDays, addDaysISO, splitSeriesAt } = await import(pathToFileURL(join(stage, 'recurrence.mjs')).href);
-const { layoutDayEvents, searchEvents } = await import(pathToFileURL(join(stage, 'dayLayout.mjs')).href);
+const { layoutDayEvents, searchEvents, sortDayEntries } = await import(pathToFileURL(join(stage, 'dayLayout.mjs')).href);
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) pass++; else { fail++; console.log('FAIL:', msg); } };
@@ -336,6 +336,48 @@ ok(searchEvents(sEvts, '  ').length === 0, 'search: whitespace query empty');
 ok(searchEvents(sEvts, 'zzz').length === 0, 'search: no matches');
 const sAll = searchEvents(sEvts, 'e');
 ok(sAll.length === 3 && sAll[0].id === 's3', 'search: results sorted by date');
+
+// ══ sortDayEntries: spanning-first, then time-of-day ══
+const entry = (id, startTime, isStart = true, isEnd = true) =>
+  ({ event: { id, title: id, startTime }, isStart, isEnd });
+
+// spanning event (isStart XOR isEnd) must lead regardless of time
+let ord = sortDayEntries([
+  entry('timed', '09:00'),
+  entry('span', '', true, false),   // multi-day, continues past today
+]).map(e => e.event.id);
+ok(ord[0] === 'span', `spanning leads: ${ord}`);
+
+// within single-day: all-day (no startTime) before timed
+ord = sortDayEntries([
+  entry('nine', '09:00'),
+  entry('allday', ''),
+  entry('seven', '07:00'),
+]).map(e => e.event.id);
+ok(ord.join(',') === 'allday,seven,nine', `all-day first then chrono: ${ord}`);
+
+// timed events strictly by start time, NOT insertion order
+ord = sortDayEntries([
+  entry('late', '18:30'),
+  entry('early', '06:15'),
+  entry('mid', '12:00'),
+]).map(e => e.event.id);
+ok(ord.join(',') === 'early,mid,late', `chronological: ${ord}`);
+
+// deterministic title tiebreak on equal times
+ord = sortDayEntries([
+  entry('Zebra', '10:00'),
+  entry('Apple', '10:00'),
+]).map(e => e.event.id);
+ok(ord.join(',') === 'Apple,Zebra', 'equal-time title tiebreak');
+
+// does not mutate input
+const input = [entry('b', '10:00'), entry('a', '08:00')];
+sortDayEntries(input);
+ok(input[0].event.id === 'b', 'sortDayEntries is non-mutating');
+
+// empty
+ok(sortDayEntries([]).length === 0, 'sortDayEntries empty');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
