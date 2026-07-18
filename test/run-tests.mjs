@@ -30,7 +30,7 @@ const {
 } = await import(pathToFileURL(join(stage, 'constants.mjs')).href);
 const { remindersForDate } = await import(pathToFileURL(join(stage, 'holidays.mjs')).href);
 const { expandOccurrences, occursOn, eventsByDateInRange, recurrenceLabel, durationDays, addDaysISO, splitSeriesAt } = await import(pathToFileURL(join(stage, 'recurrence.mjs')).href);
-const { layoutDayEvents, searchEvents, sortDayEntries } = await import(pathToFileURL(join(stage, 'dayLayout.mjs')).href);
+const { layoutDayEvents, searchEvents, sortDayEntries, sortEventsByTime } = await import(pathToFileURL(join(stage, 'dayLayout.mjs')).href);
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) pass++; else { fail++; console.log('FAIL:', msg); } };
@@ -378,6 +378,27 @@ ok(input[0].event.id === 'b', 'sortDayEntries is non-mutating');
 
 // empty
 ok(sortDayEntries([]).length === 0, 'sortDayEntries empty');
+
+// ══ sortEventsByTime: plain events (DayDetail / AgendaView) ══
+const pe = (id, startTime, allDay = false) => ({ id, title: id, startTime, allDay });
+
+let po = sortEventsByTime([pe('late','15:00'), pe('early','09:00')]).map(e => e.id);
+ok(po.join(',') === 'early,late', `plain chronological: ${po}`);
+
+po = sortEventsByTime([pe('timed','09:00'), pe('allday','', true)]).map(e => e.id);
+ok(po.join(',') === 'allday,timed', 'plain all-day first');
+
+po = sortEventsByTime([pe('Z','10:00'), pe('A','10:00')]).map(e => e.id);
+ok(po.join(',') === 'A,Z', 'plain equal-time title tiebreak');
+
+// The exact bug from the screenshot: Test(11:00) after Test 2(10:00)
+po = sortEventsByTime([pe('Test','11:00'), pe('Test 2','10:00')]).map(e => e.id);
+ok(po.join(',') === 'Test 2,Test', 'screenshot case: 10:00 sorts before 11:00');
+
+const pin = [pe('b','10:00'), pe('a','08:00')];
+sortEventsByTime(pin);
+ok(pin[0].id === 'b', 'sortEventsByTime non-mutating');
+ok(sortEventsByTime([]).length === 0, 'sortEventsByTime empty');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
