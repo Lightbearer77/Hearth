@@ -6,6 +6,7 @@ import { greekMonthDays, gregToGreek, fmtGreg } from '../lib/constants';
 import { ASATRU_HOLIDAYS, remindersForDate } from '../lib/holidays';
 import { categoryById } from '../lib/storage';
 import { eventsByDateInRange } from '../lib/recurrence';
+import { sortEventsByTime } from '../lib/dayLayout';
 
 export default function AgendaView({
   monthId, year, themeColor, events, categories,
@@ -30,11 +31,7 @@ export default function AgendaView({
       const sortedHolidays = [...holidays].sort((a, b) =>
         (a.type === 'remembrance' ? 1 : 0) - (b.type === 'remembrance' ? 1 : 0)
       );
-      const sortedEvents = [...dayEvents].sort((a, b) => {
-        if (a.allDay && !b.allDay) return -1;
-        if (!a.allDay && b.allDay) return 1;
-        return (a.startTime || '').localeCompare(b.startTime || '');
-      });
+      const sortedEvents = sortEventsByTime(dayEvents);
 
       result.push({
         isoDate: iso, greek,
