@@ -133,7 +133,7 @@ export default function SettingsModal({ onClose, onCategoriesChanged }) {
           <View style={styles.headerBtn} />
         </View>
 
-        <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
+        <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent} keyboardShouldPersistTaps="handled">
           {/* ─── Notifications ─── */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>NOTIFICATIONS</Text>
