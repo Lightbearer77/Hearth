@@ -87,6 +87,14 @@ EAS `preview` profile → standalone APK. Owner `lightbearer77`.
    title/description/location; 🔍 in the banner; picking a result jumps
    the day view (and month context) to the event's date.
 
+**v1.7.0 added (Connor's asks):** custom/stacked reminders — EventModal
+now shows a Proton-style reminder bin (one removable row per reminder,
+quick-add presets, and a custom value+unit composer for arbitrary offsets;
+storage & notifications already handled arbitrary minute offsets, so this
+was UI-only). Month-view events now sort by time-of-day via the pure,
+tested `sortDayEntries` in lib/dayLayout.js — spanning events still take the
+top slots (preserved guarantee), then all-day, then timed chronologically.
+
 **The original punch list is COMPLETE.** Remaining Hearth work is only the
 deferred Feb-29 cell decision (before 2028) and the EventModal
 keyboard-clip check.
