@@ -6,6 +6,7 @@ import { gregToGreek, fmtGregLong, fmtGreek, SEASONAL_THEMES } from '../lib/cons
 import { ASATRU_HOLIDAYS, remindersForDate } from '../lib/holidays';
 import { categoryById } from '../lib/storage';
 import { occursOn } from '../lib/recurrence';
+import { sortEventsByTime } from '../lib/dayLayout';
 
 export default function DayDetail({
   isoDate, events, categories, onClose, onAdd, onEdit,
@@ -16,7 +17,7 @@ export default function DayDetail({
     h => h.greekMonth === greek.monthId && h.greekDay === greek.day
   ) : [];
   const reminders = remindersForDate(isoDate, year);
-  const dayEvents = events.filter(e => occursOn(e, isoDate));
+  const dayEvents = sortEventsByTime(events.filter(e => occursOn(e, isoDate)));
   const themeColor = greek
     ? (SEASONAL_THEMES[greek.monthId]?.color || COLORS.accent)
     : COLORS.accent;
