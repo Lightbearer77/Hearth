@@ -18,7 +18,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const stage = mkdtempSync(join(tmpdir(), 'hearth-test-'));
 
-for (const name of ['constants', 'holidays', 'recurrence', 'dayLayout']) {
+for (const name of ['constants', 'holidays', 'recurrence', 'dayLayout', 'gridLayout']) {
   const src = readFileSync(join(root, 'lib', `${name}.js`), 'utf8')
     .replace(/from '\.\/constants'/g, "from './constants.mjs'");
   writeFileSync(join(stage, `${name}.mjs`), src);
@@ -31,6 +31,7 @@ const {
 const { remindersForDate } = await import(pathToFileURL(join(stage, 'holidays.mjs')).href);
 const { expandOccurrences, occursOn, eventsByDateInRange, recurrenceLabel, durationDays, addDaysISO, splitSeriesAt } = await import(pathToFileURL(join(stage, 'recurrence.mjs')).href);
 const { layoutDayEvents, searchEvents, sortDayEntries, sortEventsByTime } = await import(pathToFileURL(join(stage, 'dayLayout.mjs')).href);
+const { CELL_GAP, HORIZONTAL_PADDING, COLUMNS, monthCellSize, monthRowWidth } = await import(pathToFileURL(join(stage, 'gridLayout.mjs')).href);
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) pass++; else { fail++; console.log('FAIL:', msg); } };
@@ -399,6 +400,46 @@ const pin = [pe('b','10:00'), pe('a','08:00')];
 sortEventsByTime(pin);
 ok(pin[0].id === 'b', 'sortEventsByTime non-mutating');
 ok(sortEventsByTime([]).length === 0, 'sortEventsByTime empty');
+
+// ══ Month grid sizing: the Sunday column must always fit ══
+// Regression: a float cellSize rounded up at layout time, overflowed the row,
+// and flex-wrap pushed the 7th cell to the next line. Sundays went blank and
+// the whole grid shifted one column left from the first Sunday onward.
+
+const WIDTHS = [
+  320, 360, 375, 384, 390, 393, 400, 411, 412, 414, 428,
+  480, 540, 600, 640, 720, 768, 800, 820, 1024, 1080, 1280, 1600,
+  // fractional dp values — RN window dimensions are not always integers
+  392.72, 411.42857142857144, 359.6, 800.5, 1079.9999,
+];
+
+for (const w of WIDTHS) {
+  const cs = monthCellSize(w);
+  const used = monthRowWidth(cs) + HORIZONTAL_PADDING * 2;
+
+  ok(Number.isInteger(cs), `grid ${w}: cellSize not an integer (${cs})`);
+  ok(cs > 0, `grid ${w}: cellSize collapsed to ${cs}`);
+  ok(used <= w, `grid ${w}: row needs ${used}dp, only ${w} available — SUN column will wrap`);
+
+  // ...and not so conservative that a column of slack is wasted
+  const wouldOverflow = monthRowWidth(cs + 1) + HORIZONTAL_PADDING * 2;
+  ok(wouldOverflow > w, `grid ${w}: cellSize ${cs} leaves a full column of slack`);
+}
+
+// the old formula is what we are guarding against — prove it actually failed
+const legacy = (w) => (w - HORIZONTAL_PADDING * 2 - CELL_GAP * 6) / 7;
+ok(WIDTHS.some(w => !Number.isInteger(legacy(w))),
+   'grid: fixture set must include widths the legacy float formula broke on');
+
+// degenerate widths clamp instead of going negative
+ok(monthCellSize(0) === 0, 'grid: zero width clamps to 0');
+ok(monthCellSize(10) === 0, 'grid: width below chrome clamps to 0, not negative');
+
+// gap/padding/column overrides stay consistent
+const alt = { gap: 6, padding: 16, columns: 7 };
+const csAlt = monthCellSize(1000, alt);
+ok(monthRowWidth(csAlt, alt) + alt.padding * 2 <= 1000, 'grid: honors gap/padding overrides');
+ok(COLUMNS === 7, 'grid: seven columns');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
