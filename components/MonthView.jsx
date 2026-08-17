@@ -10,18 +10,18 @@ import { ASATRU_HOLIDAYS, remindersForDate } from '../lib/holidays';
 import { categoryById } from '../lib/storage';
 import { eventsByDateInRange } from '../lib/recurrence';
 import { sortDayEntries } from '../lib/dayLayout';
+import { CELL_GAP, HORIZONTAL_PADDING, monthCellSize } from '../lib/gridLayout';
 
 // sortDayEntries lives in lib/dayLayout.js (pure + tested).
-
-const CELL_GAP = 2;
-const HORIZONTAL_PADDING = 8;
+// Cell sizing lives in lib/gridLayout.js (pure + tested) — see that file for
+// why this can't just be inline float division.
 
 export default function MonthView({ monthId, year, themeColor, events, categories, onDayClick, today }) {
   const insets = useSafeAreaInsets();
   // useWindowDimensions (not Dimensions.get at module load) so the grid
   // reflows on rotation and fold/unfold.
   const { width } = useWindowDimensions();
-  const cellSize = (width - HORIZONTAL_PADDING * 2 - CELL_GAP * 6) / 7;
+  const cellSize = monthCellSize(width);
 
   const days = useMemo(() => greekMonthDays(monthId, year), [monthId, year]);
 
@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
   },
   dayHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: CELL_GAP,
     marginBottom: 6,
   },
   dayHeaderText: {
