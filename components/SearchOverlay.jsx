@@ -1,17 +1,29 @@
 import { useState, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, Modal, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList, Modal, StyleSheet, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONTS } from '../lib/theme';
 import { fmtGreek, fmtGreg } from '../lib/constants';
 import { searchEvents } from '../lib/dayLayout';
 
 export default function SearchOverlay({ events, categories, onPick, onClose }) {
   const [query, setQuery] = useState('');
+  const { height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+
+  // Card chrome above/below the list: input row + margin + card padding.
+  const CHROME = 108;
+  const topPad = insets.top + 16;
+  const listMaxHeight = Math.max(
+    120,
+    height - topPad - insets.bottom - CHROME - 24
+  );
+
   const results = useMemo(() => searchEvents(events, query).slice(0, 100), [events, query]);
   const catColor = (id) => categories.find(c => c.id === id)?.color || COLORS.accent;
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+      <View style={[styles.backdrop, { paddingTop: topPad }]}>
         <View style={styles.card}>
           <View style={styles.inputRow}>
             <TextInput
@@ -31,7 +43,7 @@ export default function SearchOverlay({ events, categories, onPick, onClose }) {
             data={results}
             keyExtractor={(e) => e.id}
             keyboardShouldPersistTaps="handled"
-            style={{ maxHeight: 420 }}
+            style={{ maxHeight: listMaxHeight }}
             renderItem={({ item }) => (
               <TouchableOpacity style={styles.row} onPress={() => onPick(item)}>
                 <View style={[styles.dot, { backgroundColor: catColor(item.categoryId) }]} />
@@ -61,7 +73,7 @@ export default function SearchOverlay({ events, categories, onPick, onClose }) {
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingTop: 70, paddingHorizontal: 16,
+    paddingHorizontal: 16,
   },
   card: {
     backgroundColor: COLORS.bgDeep,
