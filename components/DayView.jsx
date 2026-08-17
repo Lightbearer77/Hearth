@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect } from 'react';
+import { useMemo, useRef, useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Pressable, StyleSheet } from 'react-native';
 import { COLORS, FONTS } from '../lib/theme';
 import { gregToGreek, fmtGregLong, todayISO } from '../lib/constants';
@@ -55,7 +55,24 @@ export default function DayView({
     return () => clearTimeout(t);
   }, [isoDate, isToday]);
 
-  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const [nowMin, setNowMin] = useState(() => {
+    const n = new Date();
+    return n.getHours() * 60 + n.getMinutes();
+  });
+
+  // The now-line needs its own tick. Computed inline during render it only
+  // moved when some unrelated state change happened to force a re-render,
+  // so it could sit hours stale on a day left open.
+  useEffect(() => {
+    if (!isToday) return;
+    const tick = () => {
+      const n = new Date();
+      setNowMin(n.getHours() * 60 + n.getMinutes());
+    };
+    tick();
+    const id = setInterval(tick, 60000);
+    return () => clearInterval(id);
+  }, [isToday]);
 
   return (
     <View style={{ flex: 1 }}>
