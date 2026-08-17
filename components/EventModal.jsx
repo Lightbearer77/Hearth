@@ -4,6 +4,7 @@ import {
   Switch, KeyboardAvoidingView, Platform, Alert, StyleSheet,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, FONTS } from '../lib/theme';
 import { gregToGreek, fmtGregLong } from '../lib/constants';
 import { categoryById } from '../lib/storage';
@@ -39,6 +40,7 @@ export default function EventModal({
   event, categories, onSave, onDelete, onClose, occurrenceMode = false,
   futureMode = false,
 }) {
+  const insets = useSafeAreaInsets();
   const [form, setForm] = useState(event);
   const [showEndDate, setShowEndDate] = useState(!!event.endDate);
   const [customOpen, setCustomOpen] = useState((event.recurrenceInterval || 1) > 1);
@@ -120,7 +122,7 @@ export default function EventModal({
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
           <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
             <Text style={styles.headerBtnText}>← CANCEL</Text>
           </TouchableOpacity>
@@ -666,7 +668,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    paddingTop: 50,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderSubtle,
     backgroundColor: COLORS.bgSurface,
