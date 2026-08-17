@@ -8,6 +8,7 @@ import {
   getAllCategories, saveCategory, deleteCategory, newCategory,
 } from '../lib/storage';
 import Constants from 'expo-constants';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   requestNotificationPermissions, getPermissionStatus,
   refreshAllNotifications, getScheduledNotifications,
@@ -15,6 +16,7 @@ import {
 } from '../lib/notifications';
 
 export default function SettingsModal({ onClose, onCategoriesChanged }) {
+  const insets = useSafeAreaInsets();
   const [categories, setCategories] = useState([]);
   const [editing, setEditing] = useState(null);
   const [notifStatus, setNotifStatus] = useState('undetermined');
@@ -125,7 +127,7 @@ export default function SettingsModal({ onClose, onCategoriesChanged }) {
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <View style={styles.root}>
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
           <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
             <Text style={styles.headerBtnText}>← BACK</Text>
           </TouchableOpacity>
@@ -133,7 +135,11 @@ export default function SettingsModal({ onClose, onCategoriesChanged }) {
           <View style={styles.headerBtn} />
         </View>
 
-        <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          style={styles.body}
+          contentContainerStyle={[styles.bodyContent, { paddingBottom: insets.bottom + 60 }]}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* ─── Notifications ─── */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>NOTIFICATIONS</Text>
@@ -328,7 +334,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    paddingTop: 50,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderSubtle,
     backgroundColor: COLORS.bgSurface,
