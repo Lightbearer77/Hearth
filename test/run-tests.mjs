@@ -18,7 +18,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const stage = mkdtempSync(join(tmpdir(), 'hearth-test-'));
 
-for (const name of ['constants', 'holidays', 'recurrence', 'dayLayout', 'gridLayout']) {
+for (const name of ['constants', 'holidays', 'recurrence', 'dayLayout', 'gridLayout', 'tasks']) {
   const src = readFileSync(join(root, 'lib', `${name}.js`), 'utf8')
     .replace(/from '\.\/constants'/g, "from './constants.mjs'");
   writeFileSync(join(stage, `${name}.mjs`), src);
@@ -32,6 +32,10 @@ const { remindersForDate } = await import(pathToFileURL(join(stage, 'holidays.mj
 const { expandOccurrences, occursOn, eventsByDateInRange, recurrenceLabel, durationDays, addDaysISO, splitSeriesAt } = await import(pathToFileURL(join(stage, 'recurrence.mjs')).href);
 const { layoutDayEvents, searchEvents, sortDayEntries, sortEventsByTime } = await import(pathToFileURL(join(stage, 'dayLayout.mjs')).href);
 const { CELL_GAP, HORIZONTAL_PADDING, COLUMNS, monthCellSize, monthRowWidth } = await import(pathToFileURL(join(stage, 'gridLayout.mjs')).href);
+const {
+  daysBetween, newTask, isDoneOn, completionStamp, toggleDone, toggleCarry,
+  tasksForDate, forgePicksFromSync, syncPushedAt, relativeAge,
+} = await import(pathToFileURL(join(stage, 'tasks.mjs')).href);
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) pass++; else { fail++; console.log('FAIL:', msg); } };
@@ -440,6 +444,170 @@ const alt = { gap: 6, padding: 16, columns: 7 };
 const csAlt = monthCellSize(1000, alt);
 ok(monthRowWidth(csAlt, alt) + alt.padding * 2 <= 1000, 'grid: honors gap/padding overrides');
 ok(COLUMNS === 7, 'grid: seven columns');
+
+
+// ── Tasks: carry-over, completion, Forge picks ──
+// Carry-over is computed at read time from stored dates; nothing rewrites a
+// task's date. These tests pin that behavior.
+
+// daysBetween: month / year / leap boundaries, sign, DST-proof (UTC math)
+ok(daysBetween('2026-10-29', '2026-10-29') === 0, 'tasks: same day = 0');
+ok(daysBetween('2026-10-29', '2026-10-30') === 1, 'tasks: next day = 1');
+ok(daysBetween('2026-10-30', '2026-11-02') === 3, 'tasks: across month end');
+ok(daysBetween('2026-12-30', '2027-01-02') === 3, 'tasks: across year end');
+ok(daysBetween('2028-02-28', '2028-03-01') === 2, 'tasks: across leap day');
+ok(daysBetween('2026-03-07', '2026-03-09') === 2, 'tasks: across US DST start');
+ok(daysBetween('2026-10-31', '2026-11-02') === 2, 'tasks: across US DST end');
+ok(daysBetween('2026-10-30', '2026-10-29') === -1, 'tasks: negative when b < a');
+
+// factory
+{
+  const t = newTask({ title: 'x', date: '2026-10-29' });
+  ok(t.carryOver === true && t.completedAt === '', 'tasks: defaults carry on, open');
+  ok(/^tsk_/.test(t.id) && newTask().id !== newTask().id, 'tasks: unique ids');
+}
+
+const mk = (o) => newTask({ id: o.id || 't', createdAt: 1, ...o });
+const TODAY = '2026-10-29';
+
+// own date: always visible, carry or not
+{
+  const a = mk({ id: 'a', date: '2026-10-29', carryOver: false });
+  const r = tasksForDate([a], '2026-10-29', TODAY);
+  ok(r.length === 1 && r[0].dayNumber === 1 && r[0].done === false, 'tasks: own-date task shows, day 1, open');
+}
+
+// open carry task rides every day from its date through today, not past it
+{
+  const c = mk({ id: 'c', date: '2026-10-26', carryOver: true });
+  const days = ['2026-10-25', '2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30'];
+  const shown = days.map(d => tasksForDate([c], d, TODAY).length);
+  ok(JSON.stringify(shown) === JSON.stringify([0, 1, 1, 1, 1, 0]), `tasks: open carry window, got ${shown}`);
+  ok(tasksForDate([c], '2026-10-29', TODAY)[0].dayNumber === 4, 'tasks: day 4 on the 29th');
+  ok(tasksForDate([c], '2026-10-27', TODAY).every(x => x.done === false), 'tasks: open on every shown day');
+}
+
+// non-carry task stays on its own date only, visibly undone as time passes
+{
+  const n = mk({ id: 'n', date: '2026-10-26', carryOver: false });
+  const shown = ['2026-10-26', '2026-10-27', '2026-10-29'].map(d => tasksForDate([n], d, TODAY).length);
+  ok(JSON.stringify(shown) === JSON.stringify([1, 0, 0]), `tasks: non-carry only own day, got ${shown}`);
+  ok(tasksForDate([n], '2026-10-26', TODAY)[0].done === false, 'tasks: stranded non-carry stays undone');
+}
+
+// completed carry: shown through the completion day inclusive, open before it, done on it
+{
+  const c = mk({ id: 'c', date: '2026-10-26', carryOver: true, completedAt: '2026-10-28' });
+  const rows = ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29'].map(d => tasksForDate([c], d, TODAY));
+  ok(rows.map(r => r.length).join() === '1,1,1,0', `tasks: completed carry stops after completion day, got ${rows.map(r => r.length)}`);
+  ok(rows.slice(0, 3).map(r => r[0].done).join() === 'false,false,true', 'tasks: open before completion, done on it');
+}
+
+// nothing is projected into the future
+{
+  const c = mk({ id: 'c', date: '2026-10-29', carryOver: true });
+  ok(tasksForDate([c], '2026-10-30', TODAY).length === 0, 'tasks: open carry not projected to tomorrow');
+  const f = mk({ id: 'f', date: '2026-11-02', carryOver: true });
+  ok(tasksForDate([f], '2026-11-02', TODAY).length === 1, 'tasks: future-dated task shows on its own date');
+  ok(tasksForDate([f], '2026-11-03', TODAY).length === 0, 'tasks: future-dated carry not projected');
+}
+
+// ordering and tolerance
+{
+  const a = mk({ id: 'a', date: '2026-10-29', createdAt: 5 });
+  const b = mk({ id: 'b', date: '2026-10-27', createdAt: 2 });
+  const c = mk({ id: 'c', date: '2026-10-29', createdAt: 9 });
+  const r = tasksForDate([a, c, b], '2026-10-29', TODAY).map(x => x.task.id).join('');
+  ok(r === 'bac', `tasks: oldest first, got ${r}`);
+  ok(tasksForDate([null, undefined, { id: 'z', title: 'no date' }], '2026-10-29', TODAY).length === 0,
+     'tasks: junk / dateless rows skipped');
+}
+
+// isDoneOn / completionStamp
+ok(isDoneOn({ completedAt: '' }, '2026-10-29') === false, 'tasks: open is not done');
+ok(isDoneOn({ completedAt: '2026-10-28' }, '2026-10-27') === false, 'tasks: not done before completion');
+ok(isDoneOn({ completedAt: '2026-10-28' }, '2026-10-28') === true, 'tasks: done on completion day');
+ok(completionStamp('2026-10-27', TODAY) === '2026-10-27', 'tasks: past view stamps that day');
+ok(completionStamp(TODAY, TODAY) === TODAY, 'tasks: today view stamps today');
+ok(completionStamp('2026-11-02', TODAY) === TODAY, 'tasks: future view stamps today');
+
+// toggleDone: the tap flips what is displayed, and a past-day tap visibly takes
+{
+  const c = mk({ id: 'c', date: '2026-10-26', carryOver: true });
+  const doneToday = toggleDone(c, TODAY, TODAY);
+  ok(doneToday.completedAt === TODAY && c.completedAt === '', 'tasks: check from today stamps today, input untouched');
+  ok(tasksForDate([doneToday], TODAY, TODAY)[0].done === true, 'tasks: shows checked after tick');
+  ok(toggleDone(doneToday, TODAY, TODAY).completedAt === '', 'tasks: second tap reopens');
+
+  const fromPast = toggleDone(c, '2026-10-27', TODAY);
+  ok(fromPast.completedAt === '2026-10-27', 'tasks: past-day tick stamps that day');
+  ok(tasksForDate([fromPast], '2026-10-27', TODAY)[0].done === true, 'tasks: past-day tick is visible on that day');
+  ok(tasksForDate([fromPast], '2026-10-28', TODAY).length === 0, 'tasks: and it stops riding afterward');
+
+  const early = toggleDone(mk({ id: 'e', date: '2026-11-02', carryOver: false }), '2026-11-02', TODAY);
+  ok(early.completedAt === TODAY, 'tasks: early completion stamps today');
+  ok(tasksForDate([early], '2026-11-02', TODAY)[0].done === true, 'tasks: early completion reads done on its date');
+}
+
+// toggleCarry: off clamps a late completion onto the task's own date
+{
+  const c = mk({ id: 'c', date: '2026-10-26', carryOver: true, completedAt: '2026-10-28' });
+  const off = toggleCarry(c);
+  ok(off.carryOver === false && off.completedAt === '2026-10-26', 'tasks: carry off clamps completion to own date');
+  ok(tasksForDate([off], '2026-10-26', TODAY)[0].done === true, 'tasks: clamped task reads done on its date');
+  const back = toggleCarry(off);
+  ok(back.carryOver === true && back.completedAt === '2026-10-26', 'tasks: carry back on keeps completion');
+  const open = toggleCarry(mk({ id: 'o', date: '2026-10-26', carryOver: true }));
+  ok(open.completedAt === '', 'tasks: carry off on an open task leaves it open');
+}
+
+// Forge picks: In Progress only, live only, sorted, garbage-tolerant
+{
+  const sync = {
+    lastUpdated: '2026-10-27T17:41:48.497Z',
+    tasks: [
+      { id: 'a', name: 'Undated B', goal: 'G2', status: 'in-progress' },
+      { id: 'b', name: 'Due late', goal: 'G1', status: 'in-progress', dueDate: '2026-11-05', section: 'Home Server' },
+      { id: 'c', name: 'Due soon', goal: 'G4', status: 'in-progress', dueDate: '2026-10-30' },
+      { id: 'd', name: 'Backlog', goal: 'G1', status: 'backlog' },
+      { id: 'e', name: 'Todo', goal: 'G1', status: 'todo' },
+      { id: 'f', name: 'Done', goal: 'G1', status: 'done' },
+      { id: 'g', name: 'Retired', goal: 'G1', status: 'retired' },
+      { id: 'h', name: 'Deleted', goal: 'G1', status: 'in-progress', deleted: true },
+      { id: 'i', name: '', goal: 'G1', status: 'in-progress' },
+      { id: 'j', name: 'Undated A', goal: 'G1', status: 'in-progress' },
+      null,
+    ],
+  };
+  const picks = forgePicksFromSync(sync);
+  ok(picks.map(p => p.id).join('') === 'cbja', `forge: In Progress only, due first then goal, got ${picks.map(p => p.id).join('')}`);
+  ok(picks.find(p => p.id === 'b').section === 'Home Server', 'forge: section carried through');
+  ok(forgePicksFromSync(null).length === 0 && forgePicksFromSync({}).length === 0
+     && forgePicksFromSync({ tasks: 'nope' }).length === 0, 'forge: garbage input yields no picks');
+  ok(syncPushedAt(sync) === Date.parse('2026-10-27T17:41:48.497Z'), 'forge: pushedAt parsed');
+  ok(syncPushedAt({}) === 0 && syncPushedAt({ lastUpdated: 'junk' }) === 0, 'forge: bad pushedAt is 0');
+}
+
+// relativeAge
+{
+  const now = 1_000_000_000_000;
+  ok(relativeAge(0, now) === '', 'age: missing stamp is empty');
+  ok(relativeAge(now - 20_000, now) === 'just now', 'age: <1m');
+  ok(relativeAge(now - 5 * 60_000, now) === '5m ago', 'age: minutes');
+  ok(relativeAge(now - 3 * 3_600_000, now) === '3h ago', 'age: hours');
+  ok(relativeAge(now - 50 * 3_600_000, now) === '2d ago', 'age: days');
+  ok(relativeAge(now + 60_000, now) === 'just now', 'age: clock skew never goes negative');
+}
+
+// Schema guard: SCHEMA_VERSION must equal the highest MIGRATIONS key, or the
+// runner either skips a migration or loops past the table.
+{
+  const src = readFileSync(join(root, 'lib', 'storage.js'), 'utf8');
+  const ver = Number(/const SCHEMA_VERSION = (\d+);/.exec(src)?.[1]);
+  const keys = [...src.matchAll(/^  (\d+): async \(db\)/gm)].map(m => Number(m[1]));
+  ok(keys.length > 0 && ver === Math.max(...keys), `schema: SCHEMA_VERSION ${ver} must equal highest migration ${Math.max(...keys)}`);
+  ok(keys.every((k, i) => k === i + 1), 'schema: migrations are contiguous from 1');
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

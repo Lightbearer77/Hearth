@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback, Component } from 'react';
-import { View, Text, StatusBar, StyleSheet, PanResponder, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StatusBar, StyleSheet, PanResponder, ScrollView, TouchableOpacity, Alert, AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -12,7 +12,10 @@ import {
   initDatabase, getAllEvents, getAllCategories,
   saveEvent as dbSaveEvent, deleteEvent as dbDeleteEvent,
   newEvent,
+  getAllTasks, saveTask as dbSaveTask, deleteTask as dbDeleteTask,
 } from './lib/storage';
+import { newTask, toggleDone, toggleCarry } from './lib/tasks';
+import { loadCachedPicks, fetchForgePicks } from './lib/forgeSync';
 
 import SeasonalBanner from './components/SeasonalBanner';
 import MonthView from './components/MonthView';
@@ -76,19 +79,53 @@ function AppContent() {
   // When editing one occurrence of a series: { mode:'occurrence', masterId, occurrenceIso }
   const [editingCtx, setEditingCtx] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [tasks, setTasks] = useState([]);
+  // Read-only mirror of the Forge's In Progress lane (see lib/forgeSync.js).
+  const [forge, setForge] = useState({
+    picks: [], pushedAt: 0, fetchedAt: 0, loading: false, error: false,
+  });
+  const lastForgeAttempt = useRef(0);
+
+  // Throttled to once per 30s unless forced (the day sheet's REFRESH button).
+  // A failure keeps whatever picks are already on screen.
+  const refreshForge = useCallback(async (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastForgeAttempt.current < 30000) return;
+    lastForgeAttempt.current = now;
+    setForge(f => ({ ...f, loading: true }));
+    try {
+      const res = await fetchForgePicks();
+      setForge({ ...res, loading: false, error: false });
+    } catch (e) {
+      console.log('[Hearth] Forge picks refresh failed:', e?.message);
+      setForge(f => ({ ...f, loading: false, error: true }));
+    }
+  }, []);
 
   useEffect(() => {
     (async () => {
       try {
         await initDatabase();
-        const [evts, cats] = await Promise.all([getAllEvents(), getAllCategories()]);
+        const [evts, cats, tks] = await Promise.all([
+          getAllEvents(), getAllCategories(),
+          getAllTasks().catch(e => { console.warn('Tasks load failed', e); return []; }),
+        ]);
         setEvents(evts);
         setCategories(cats);
+        setTasks(tks);
       } catch (e) {
         console.warn('Init failed', e);
       } finally {
         setReady(true);
       }
+
+      // Forge picks: show the cached list immediately, then refresh in the
+      // background. Neither can block or crash startup.
+      try {
+        const cached = await loadCachedPicks();
+        setForge(f => ({ ...f, ...cached }));
+      } catch { /* cache is best-effort */ }
+      refreshForge(true);
 
       // Rolling 90-day notification window: re-schedule on every launch so
       // reminders keep firing even if Settings is never opened again. Runs
@@ -103,6 +140,47 @@ function AppContent() {
         console.log('[Hearth] Notification refresh skipped:', notifErr?.message);
       }
     })();
+  }, []);
+
+  // Coming back to Hearth after a Forge push: pick up the new In Progress set.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') refreshForge(false);
+    });
+    return () => sub.remove();
+  }, [refreshForge]);
+
+  const handleAddTask = useCallback(async (title, carryOver) => {
+    if (!selectedDate) return;
+    try {
+      const task = newTask({ title, date: selectedDate, carryOver });
+      await dbSaveTask(task);
+      setTasks(prev => [...prev, task]);
+    } catch (e) { console.warn('Task add failed', e); }
+  }, [selectedDate]);
+
+  const replaceTask = useCallback(async (next) => {
+    try {
+      const stamped = { ...next, updatedAt: Date.now() };
+      await dbSaveTask(stamped);
+      setTasks(prev => prev.map(t => (t.id === stamped.id ? stamped : t)));
+    } catch (e) { console.warn('Task update failed', e); }
+  }, []);
+
+  const handleToggleTask = useCallback(
+    (task, viewedIso) => replaceTask(toggleDone(task, viewedIso, todayISO())),
+    [replaceTask]
+  );
+  const handleToggleCarry = useCallback(
+    (task) => replaceTask(toggleCarry(task)),
+    [replaceTask]
+  );
+
+  const handleDeleteTask = useCallback(async (task) => {
+    try {
+      await dbDeleteTask(task.id);
+      setTasks(prev => prev.filter(t => t.id !== task.id));
+    } catch (e) { console.warn('Task delete failed', e); }
   }, []);
 
   const goPrev = () => setView(v => prevGreekMonth(v.monthId, v.year));
@@ -330,6 +408,12 @@ function AppContent() {
           onClose={() => setSelectedDate(null)}
           onAdd={() => startNewEvent(selectedDate)}
           onEdit={(evt, iso) => { setSelectedDate(null); openEventForEdit(evt, iso); }}
+          tasks={tasks} todayIso={todayISO()} forge={forge}
+          onAddTask={handleAddTask}
+          onToggleTask={handleToggleTask}
+          onToggleCarry={handleToggleCarry}
+          onDeleteTask={handleDeleteTask}
+          onRefreshForge={() => refreshForge(true)}
         />
       )}
       {editingEvent && (

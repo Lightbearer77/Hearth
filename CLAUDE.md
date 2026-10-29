@@ -39,6 +39,22 @@ EAS `preview` profile → standalone APK. Owner `lightbearer77`.
    offset arrays (minutes before start; all-day anchors at 9:00).
 6. **Sub-day recurrence (minutes/hours) is deliberately excluded** — the
    expansion model is date-based. Flagged to Connor and accepted.
+7. **Tasks: carry-over is computed at read time, never by moving dates**
+   (v1.8.0). A task keeps the `date` it was created for. `tasksForDate`
+   shows a carry-over task on every day from that date through its
+   completion day (or through today while still open); nothing is projected
+   into the future. Do NOT add a midnight job that bumps dates — Android
+   background execution is unreliable and it would erase when a task began.
+   Checking a task off from a past day stamps THAT day (`completionStamp`),
+   so the tap is visible; from a future day it stamps today.
+8. **Hearth never writes to `forge-sync.json`** (Connor's ruling, 2026-10-29).
+   Forge "Push State" overwrites GitHub with the phone's raw snapshot, so a
+   Hearth-side write would be silently lost. The day sheet's THIS WEEK ·
+   FORGE list is a read-only view of the Forge's **In Progress** lane
+   (status `in-progress`) — Connor moves his weekly-planning picks there in
+   the Forge, Pushes, and checks them off in the Forge. Hearth-only tasks live
+   in the local `tasks` table. The Forge has no URL scheme, so tapping a pick
+   just opens the Forge app (no per-task deep link, by choice).
 
 ## Architecture map
 
@@ -49,11 +65,20 @@ EAS `preview` profile → standalone APK. Owner `lightbearer77`.
   greekMonthly, custom `recurrenceInterval` (every N units), legacy
   `biweekly` read as weekly×2, `exdates`, durations with lookback,
   `eventsByDateInRange` → `{event, isStart, isEnd}` wrappers, per-day dedupe.
-- `lib/storage.js` — SQLite `hearth.db`, schema **v3** via PRAGMA
+- `lib/storage.js` — SQLite `hearth.db`, schema **v5** via PRAGMA
   user_version runner. CREATE stays v0-shaped; add columns via MIGRATIONS
-  only, never by editing CREATE.
+  only, never by editing CREATE. v5 adds the `tasks` and `kv` tables (both
+  `CREATE TABLE IF NOT EXISTS`, so idempotent). The suite asserts
+  SCHEMA_VERSION equals the highest migration key.
 - `lib/notifications.js` — `refreshAllNotifications()` is the only scheduler
   entry point.
+- `lib/tasks.js` — PURE, tested: Hearth-only task model + `tasksForDate`
+  (carry-over computed at read time), `toggleDone` / `toggleCarry`, and the
+  Forge-picks filter (`forgePicksFromSync`). Imports nothing, so the node
+  runner loads it directly.
+- `lib/forgeSync.js` — READ-ONLY fetch of the public `forge-sync.json`, cached
+  in the `kv` table for offline use. `lib/openForge.js` launches the Forge app.
+  Neither ever writes to the Forge.
 - `components/` — SeasonalBanner (sideGroup nav, mirror spacer keeps TODAY
   centered), MonthView (memoized dayData; useWindowDimensions for fold
   reflow; spanning title banners with squared continuation edges; spanning
@@ -61,7 +86,7 @@ EAS `preview` profile → standalone APK. Owner `lightbearer77`.
   chips + Custom N×unit; multi-select reminders; occurrence mode),
   SettingsModal.
 - `test/run-tests.mjs` — zero deps, self-bootstrapping.
-  `npm test` → **3,519 assertions**. Calendar or recurrence changes must
+  `npm test` → **3,702 assertions**. Calendar or recurrence changes must
   keep it green AND extend it.
 
 ## Punch list (settled with Connor — build in this order)
@@ -94,6 +119,15 @@ storage & notifications already handled arbitrary minute offsets, so this
 was UI-only). Month-view events now sort by time-of-day via the pure,
 tested `sortDayEntries` in lib/dayLayout.js — spanning events still take the
 top slots (preserved guarantee), then all-day, then timed chronologically.
+
+**v1.8.0 added (Connor's ask): Tasks section in the day sheet.** (1) TASKS:
+checkboxes, inline add, per-task ↻ carry toggle (default on), DAY n badge on
+carried tasks, delete with confirm. (2) THIS WEEK · FORGE (today's sheet only):
+the Forge's In Progress tasks, refreshed on launch, on returning to the app,
+and via ↻ REFRESH; shows how long ago the Forge last pushed. Adds the
+`expo-intent-launcher` dependency (installed with `npx expo install`).
+Not built, by design: month-view dots for open tasks, a daily open-task
+notification, editing a task's title (delete and re-add).
 
 **The original punch list is COMPLETE.** Remaining Hearth work is only the
 deferred Feb-29 cell decision (before 2028) and the EventModal
