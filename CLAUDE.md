@@ -67,10 +67,10 @@ EAS `preview` profile → standalone APK. Owner `lightbearer77`.
 ## Sync: hearth-sync.json (v1.8.0) — the Claude ⇄ Hearth bridge
 
 Same protocol family as the Forge's forge-sync.json, for calendar events.
-The file lives in the **PRIVATE** repo `Lightbearer77/hearth-sync` (events
+The file lives in the **PRIVATE** repo `Lightbearer77/Lightbearer77-hearth-sync` (events
 are personal; do NOT move it to a public repo). The app pulls on launch and
 via Settings ⟳ SYNC; Settings → PUSH STATE publishes a full snapshot. Auth
-is an on-device fine-grained token (hearth-sync only, Contents RW) in the
+is an on-device fine-grained token (that repo only, Contents RW) in the
 device-local `settings` table (never synced). Reads go through the GitHub
 Contents API, so there is no raw-CDN staleness.
 
@@ -92,7 +92,7 @@ Rules (identical to the Forge's — do not re-open):
 
 **Authoring discipline for Claude instances (violating this silently loses
 Connor's data):**
-1. Clone `Lightbearer77/hearth-sync`; before EVERY publish run
+1. Clone `Lightbearer77/Lightbearer77-hearth-sync`; before EVERY publish run
    `git fetch --depth=1 origin main && git reset --hard origin/main` (the
    phone may have pushed).
 2. Write `changes.json` = `{ "events": [ ... ] }` with full records and

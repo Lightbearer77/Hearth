@@ -265,10 +265,10 @@ export default function SettingsModal({ onClose, onCategoriesChanged, onSynced }
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>SYNC</Text>
             <Text style={styles.sectionDesc}>
-              Pulls events Claude has published to your private hearth-sync repo,
+              Pulls events Claude has published to your private sync repo,
               and pushes a full snapshot of this phone. Newest edit wins per event.
               Sync runs on launch; push after you add events here. Use a fine-grained
-              token for the hearth-sync repo only (Contents read and write).
+              token for that repo only (Contents read and write).
             </Text>
             <TextInput
               value={syncToken}

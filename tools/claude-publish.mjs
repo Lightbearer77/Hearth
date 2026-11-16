@@ -3,7 +3,7 @@
 // into the CURRENT published file with the repo's tested LWW engine and
 // emits the full merged snapshot on stdout.
 //
-// The sync file lives in the PRIVATE repo Lightbearer77/hearth-sync, so this
+// The sync file lives in the PRIVATE repo Lightbearer77/Lightbearer77-hearth-sync, so this
 // reads it from a LOCAL CLONE (no network, no CDN staleness):
 //
 //   git -C <clone> fetch --depth=1 origin main && git -C <clone> reset --hard origin/main
