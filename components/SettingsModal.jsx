@@ -6,7 +6,9 @@ import {
 import { COLORS, FONTS, PRESET_COLORS } from '../lib/theme';
 import {
   getAllCategories, saveCategory, deleteCategory, newCategory,
+  getSetting, setSetting,
 } from '../lib/storage';
+import { pullSync, pushSync, SETTING_TOKEN, SETTING_LAST } from '../lib/syncRunner';
 import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -15,17 +17,67 @@ import {
   cancelAllNotifications,
 } from '../lib/notifications';
 
-export default function SettingsModal({ onClose, onCategoriesChanged }) {
+export default function SettingsModal({ onClose, onCategoriesChanged, onSynced }) {
   const insets = useSafeAreaInsets();
   const [categories, setCategories] = useState([]);
   const [editing, setEditing] = useState(null);
   const [notifStatus, setNotifStatus] = useState('undetermined');
   const [scheduledCount, setScheduledCount] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [syncToken, setSyncToken] = useState('');
+  const [syncStatus, setSyncStatus] = useState('');
+  const [syncBusy, setSyncBusy] = useState(false);
 
   useEffect(() => {
     refreshAll();
+    (async () => {
+      setSyncToken(await getSetting(SETTING_TOKEN, ''));
+      const last = await getSetting(SETTING_LAST, '');
+      if (last) setSyncStatus(`Last sync: ${last}`);
+    })();
   }, []);
+
+  // ─── Sync (hearth-sync.json, private repo) ───
+  const stampSync = async (msg) => {
+    const when = new Date().toLocaleString();
+    await setSetting(SETTING_LAST, `${when} · ${msg}`);
+    setSyncStatus(`Last sync: ${when} · ${msg}`);
+  };
+
+  const handleSaveToken = async () => {
+    await setSetting(SETTING_TOKEN, syncToken.trim());
+    setSyncStatus(syncToken.trim() ? 'Token saved.' : 'Token cleared.');
+  };
+
+  const handleSync = async () => {
+    setSyncBusy(true);
+    try {
+      await setSetting(SETTING_TOKEN, syncToken.trim());
+      const res = await pullSync();
+      if (res.skipped) { setSyncStatus('Add a sync token first.'); return; }
+      if (res.empty) { await stampSync('no sync file yet'); return; }
+      await stampSync(`${res.report.inserted} new, ${res.report.updated} updated, ${res.report.deletedApplied} removed`);
+      if (res.changed && onSynced) await onSynced();
+    } catch (e) {
+      setSyncStatus(`Sync failed: ${e?.message || e}`);
+    } finally {
+      setSyncBusy(false);
+    }
+  };
+
+  const handlePush = async () => {
+    setSyncBusy(true);
+    try {
+      await setSetting(SETTING_TOKEN, syncToken.trim());
+      const res = await pushSync();
+      await stampSync(`pushed ${res.pushed} events`);
+      if (res.pulled?.changed && onSynced) await onSynced();
+    } catch (e) {
+      setSyncStatus(`Push failed: ${e?.message || e}`);
+    } finally {
+      setSyncBusy(false);
+    }
+  };
 
   const refreshAll = async () => {
     const [cats, status, sched] = await Promise.all([
@@ -207,6 +259,47 @@ export default function SettingsModal({ onClose, onCategoriesChanged }) {
                 </TouchableOpacity>
               </View>
             )}
+          </View>
+
+          {/* ─── Sync ─── */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>SYNC</Text>
+            <Text style={styles.sectionDesc}>
+              Pulls events Claude has published to your private sync repo,
+              and pushes a full snapshot of this phone. Newest edit wins per event.
+              Sync runs on launch; push after you add events here. Use a fine-grained
+              token for that repo only (Contents read and write).
+            </Text>
+            <TextInput
+              value={syncToken}
+              onChangeText={setSyncToken}
+              placeholder="Fine-grained GitHub token"
+              placeholderTextColor={COLORS.textFaint}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.syncInput}
+            />
+            <View style={styles.btnRow}>
+              <TouchableOpacity
+                onPress={handleSync}
+                disabled={syncBusy}
+                style={[styles.secondaryBtn, syncBusy && { opacity: 0.5 }, { flex: 1 }]}
+              >
+                <Text style={styles.secondaryBtnText}>{syncBusy ? 'WORKING…' : '⟳ SYNC'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handlePush}
+                disabled={syncBusy}
+                style={[styles.secondaryBtn, syncBusy && { opacity: 0.5 }, { flex: 1 }]}
+              >
+                <Text style={styles.secondaryBtnText}>PUSH STATE</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity onPress={handleSaveToken} style={{ marginTop: 10 }}>
+              <Text style={styles.iconBtnText}>SAVE TOKEN ONLY</Text>
+            </TouchableOpacity>
+            {!!syncStatus && <Text style={styles.syncStatus}>{syncStatus}</Text>}
           </View>
 
           {/* ─── Categories ─── */}
@@ -419,6 +512,15 @@ const styles = StyleSheet.create({
   btnRow: {
     flexDirection: 'row',
     gap: 8,
+  },
+  syncInput: {
+    borderWidth: 1, borderColor: COLORS.borderMid, borderRadius: 4,
+    paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12,
+    fontSize: 13, fontFamily: FONTS.mono, color: COLORS.textPrimary,
+  },
+  syncStatus: {
+    marginTop: 12,
+    fontSize: 11, fontFamily: FONTS.mono, color: COLORS.textMuted, lineHeight: 16,
   },
 
   categoryRow: {

@@ -18,7 +18,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const stage = mkdtempSync(join(tmpdir(), 'hearth-test-'));
 
-for (const name of ['constants', 'holidays', 'recurrence', 'dayLayout', 'gridLayout', 'tasks']) {
+for (const name of ['constants', 'holidays', 'recurrence', 'dayLayout', 'gridLayout', 'tasks', 'sync']) {
   const src = readFileSync(join(root, 'lib', `${name}.js`), 'utf8')
     .replace(/from '\.\/constants'/g, "from './constants.mjs'");
   writeFileSync(join(stage, `${name}.mjs`), src);
@@ -31,6 +31,7 @@ const {
 const { remindersForDate } = await import(pathToFileURL(join(stage, 'holidays.mjs')).href);
 const { expandOccurrences, occursOn, eventsByDateInRange, recurrenceLabel, durationDays, addDaysISO, splitSeriesAt } = await import(pathToFileURL(join(stage, 'recurrence.mjs')).href);
 const { layoutDayEvents, searchEvents, sortDayEntries, sortEventsByTime } = await import(pathToFileURL(join(stage, 'dayLayout.mjs')).href);
+const { normalizeEvent, mergeSyncFile, serializeEvents, SYNC_FILE_VERSION } = await import(pathToFileURL(join(stage, 'sync.mjs')).href);
 const { CELL_GAP, HORIZONTAL_PADDING, COLUMNS, monthCellSize, monthRowWidth } = await import(pathToFileURL(join(stage, 'gridLayout.mjs')).href);
 const {
   daysBetween, newTask, isDoneOn, completionStamp, toggleDone, toggleCarry,
@@ -607,6 +608,78 @@ ok(completionStamp('2026-11-02', TODAY) === TODAY, 'tasks: future view stamps to
   const keys = [...src.matchAll(/^  (\d+): async \(db\)/gm)].map(m => Number(m[1]));
   ok(keys.length > 0 && ver === Math.max(...keys), `schema: SCHEMA_VERSION ${ver} must equal highest migration ${Math.max(...keys)}`);
   ok(keys.every((k, i) => k === i + 1), 'schema: migrations are contiguous from 1');
+}
+
+// ── Sync engine (hearth-sync.json) ──
+{
+  const mk = (id, updatedAt, extra = {}) => ({
+    id, title: `T-${id}`, date: '2026-11-22', updatedAt, deleted: false, ...extra,
+  });
+  const file = (events) => ({ version: SYNC_FILE_VERSION, events });
+
+  // normalizeEvent: validation and defaults
+  ok(normalizeEvent(null) === null, 'sync: null record skipped');
+  ok(normalizeEvent({ title: 'x', date: '2026-11-22' }) === null, 'sync: missing id skipped');
+  ok(normalizeEvent({ id: 'a', title: '', date: '2026-11-22' }) === null, 'sync: empty title skipped');
+  ok(normalizeEvent({ id: 'a', title: 'x', date: '22-11-2026' }) === null, 'sync: bad date skipped');
+  const n1 = normalizeEvent({ id: 'a', title: ' Dad ', date: '2026-11-22', startTime: '13:00', updatedAt: 5 });
+  ok(n1.title === 'Dad' && n1.startTime === '13:00' && n1.categoryId === 'G1', 'sync: trims title, default category');
+  ok(n1.recurrence === 'none' && n1.recurrenceInterval === 1 && n1.deleted === false, 'sync: recurrence defaults');
+  ok(Array.isArray(n1.reminders) && n1.reminders[0] === 0, 'sync: default reminder is at-start');
+  ok(normalizeEvent({ id: 'a', title: 'x', date: '2026-11-25', endDate: '2026-11-24' }).endDate === '', 'sync: end before start dropped');
+  const ad = normalizeEvent({ id: 'a', title: 'x', date: '2026-11-25', allDay: true, startTime: '09:00', endTime: '10:00' });
+  ok(ad.allDay === true && ad.startTime === '' && ad.endTime === '', 'sync: all-day clears times');
+  ok(normalizeEvent({ id: 'a', title: 'x', date: '2026-11-25', startTime: '25:00' }).startTime === '', 'sync: invalid time dropped');
+  ok(normalizeEvent({ id: 'a', title: 'x', date: '2026-11-25', recurrence: 'biweekly' }).recurrence === 'none', 'sync: unknown recurrence falls back');
+  ok(normalizeEvent({ id: 'a', title: 'x', date: '2026-11-25', recurrenceInterval: 0 }).recurrenceInterval === 1, 'sync: interval clamped to 1');
+  const tomb = normalizeEvent({ id: 'a', deleted: true, updatedAt: 9 });
+  ok(tomb && tomb.deleted === true && tomb.updatedAt === 9, 'sync: tombstone needs only id + updatedAt');
+
+  // Insert / LWW
+  let r = mergeSyncFile([], file([mk('a', 10)]));
+  ok(r.report.inserted === 1 && r.changed.length === 1 && r.merged.length === 1, 'sync: insert new');
+  r = mergeSyncFile([mk('a', 10, { title: 'local' })], file([mk('a', 20, { title: 'remote' })]));
+  ok(r.report.updated === 1 && r.merged[0].title === 'remote', 'sync: strictly newer incoming wins');
+  r = mergeSyncFile([mk('a', 20, { title: 'local' })], file([mk('a', 10, { title: 'remote' })]));
+  ok(r.report.localWon === 1 && r.merged[0].title === 'local' && r.changed.length === 0, 'sync: older incoming loses');
+  r = mergeSyncFile([mk('a', 10, { title: 'local' })], file([mk('a', 10, { title: 'remote' })]));
+  ok(r.report.localWon === 1 && r.merged[0].title === 'local', 'sync: tie keeps local');
+
+  // Tombstones symmetric
+  r = mergeSyncFile([mk('a', 10)], file([{ id: 'a', deleted: true, updatedAt: 20 }]));
+  ok(r.report.deletedApplied === 1 && r.merged[0].deleted === true, 'sync: newer tombstone kills live');
+  r = mergeSyncFile([mk('a', 20)], file([{ id: 'a', deleted: true, updatedAt: 10 }]));
+  ok(r.report.localWon === 1 && r.merged[0].deleted === false, 'sync: older tombstone loses to live');
+  r = mergeSyncFile([{ id: 'a', deleted: true, updatedAt: 10, title: '', date: '' }], file([mk('a', 20)]));
+  ok(r.report.updated === 1 && r.merged[0].deleted === false, 'sync: newer live resurrects tombstone');
+  r = mergeSyncFile([], file([{ id: 'ghost', deleted: true, updatedAt: 5 }]));
+  ok(r.report.deletedApplied === 1 && r.merged[0].deleted === true, 'sync: tombstone for unknown id is stored');
+
+  // Absence = no opinion; partial files; garbage tolerated
+  r = mergeSyncFile([mk('a', 10), mk('b', 10)], file([mk('a', 20)]));
+  ok(r.merged.length === 2 && r.merged.find(e => e.id === 'b').deleted === false, 'sync: absence never deletes');
+  r = mergeSyncFile([mk('a', 10)], file([]));
+  ok(r.merged.length === 1 && r.changed.length === 0, 'sync: empty file changes nothing');
+  r = mergeSyncFile([mk('a', 10)], {});
+  ok(r.merged.length === 1 && r.report.total === 0, 'sync: file without events key is a no-op');
+  r = mergeSyncFile([], file([mk('a', 10), { bad: true }, null, mk('c', 10)]));
+  ok(r.report.skipped === 2 && r.report.inserted === 2, 'sync: bad records skipped, good ones land');
+
+  // Claude-authored entry without updatedAt (0) never beats a local edit
+  r = mergeSyncFile([mk('a', 10, { title: 'local' })], file([{ id: 'a', title: 'x', date: '2026-11-22' }]));
+  ok(r.merged[0].title === 'local', 'sync: missing updatedAt loses to local');
+
+  // Idempotence: merging the same file twice changes nothing the second time
+  const f = file([mk('a', 10), mk('b', 12), { id: 'c', deleted: true, updatedAt: 14 }]);
+  const once = mergeSyncFile([], f);
+  const twice = mergeSyncFile(once.merged, f);
+  ok(twice.changed.length === 0 && twice.merged.length === 3, 'sync: merge is idempotent');
+
+  // Snapshot round-trip
+  const snap = serializeEvents(once.merged, 'Hearth');
+  ok(snap.version === SYNC_FILE_VERSION && snap.updatedBy === 'Hearth' && snap.events.length === 3, 'sync: serialize shape');
+  const back = mergeSyncFile([], JSON.parse(JSON.stringify(snap)));
+  ok(back.merged.length === 3, 'sync: snapshot survives a JSON round-trip');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

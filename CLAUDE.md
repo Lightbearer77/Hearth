@@ -65,7 +65,7 @@ EAS `preview` profile → standalone APK. Owner `lightbearer77`.
   greekMonthly, custom `recurrenceInterval` (every N units), legacy
   `biweekly` read as weekly×2, `exdates`, durations with lookback,
   `eventsByDateInRange` → `{event, isStart, isEnd}` wrappers, per-day dedupe.
-- `lib/storage.js` — SQLite `hearth.db`, schema **v5** via PRAGMA
+- `lib/storage.js` — SQLite `hearth.db`, schema **v6** via PRAGMA
   user_version runner. CREATE stays v0-shaped; add columns via MIGRATIONS
   only, never by editing CREATE. v5 adds the `tasks` and `kv` tables (both
   `CREATE TABLE IF NOT EXISTS`, so idempotent). The suite asserts
@@ -86,8 +86,63 @@ EAS `preview` profile → standalone APK. Owner `lightbearer77`.
   chips + Custom N×unit; multi-select reminders; occurrence mode),
   SettingsModal.
 - `test/run-tests.mjs` — zero deps, self-bootstrapping.
-  `npm test` → **3,702 assertions**. Calendar or recurrence changes must
+  `npm test` → **3,731 assertions**. Calendar or recurrence changes must
   keep it green AND extend it.
+
+## Sync: hearth-sync.json (v1.9.0) — the Claude ⇄ Hearth bridge
+
+Same protocol family as the Forge's forge-sync.json, for calendar events.
+The file lives in the **PRIVATE** repo `Lightbearer77/Lightbearer77-hearth-sync` (events
+are personal; do NOT move it to a public repo). The app pulls on launch and
+via Settings ⟳ SYNC; Settings → PUSH STATE publishes a full snapshot. Auth
+is an on-device fine-grained token (that repo only, Contents RW) in the
+device-local `settings` table (never synced). Reads go through the GitHub
+Contents API, so there is no raw-CDN staleness.
+
+Rules (identical to the Forge's — do not re-open):
+- Whole-event LWW on `updatedAt` (ms); strictly greater wins, tie keeps
+  local. No field-level merging.
+- Deletion is a tombstone (`events.deleted`, schema v5), never a row
+  removal. `getAllEvents()` returns live events only; `getAllEventsForSync()`
+  includes tombstones. Tombstones are symmetric with live edits.
+- Absence = no opinion. Partial patches and full snapshots are both valid.
+- Local edits stamp `updated_at = now`; the sync path calls
+  `saveEvent(e, { keepUpdatedAt: true })` so merge-decided timestamps pass
+  through untouched.
+- Categories are NOT synced. Events carry a `categoryId`; unknown ids render
+  neutral. Use G1–G4 / RITUAL / PERSONAL when authoring.
+- `lib/sync.js` is pure and unit-tested; `lib/syncRunner.js` is the
+  SQLite glue (pull = fetch → merge → persist changed; push = pull first,
+  then publish snapshot, so a push never rolls back a newer Claude edit).
+
+**Authoring discipline for Claude instances (violating this silently loses
+Connor's data):**
+1. Clone `Lightbearer77/Lightbearer77-hearth-sync`; before EVERY publish run
+   `git fetch --depth=1 origin main && git reset --hard origin/main` (the
+   phone may have pushed).
+2. Write `changes.json` = `{ "events": [ ... ] }` with full records and
+   `updatedAt: Date.now()`. Required: `id`, `title`, `date` (ISO). Optional:
+   `endDate`, `startTime`/`endTime` (HH:MM), `allDay`, `location`,
+   `description`, `categoryId`, `reminders` (minutes before start, default
+   `[0]`), `recurrence`.
+3. `node tools/claude-publish.mjs changes.json <clone>/hearth-sync.json > merged.json`
+   — merges with the tested engine and prints counts. Diff the added /
+   removed / changed ids against the current file before copying it over.
+4. Commit and push to `main`. Tell Connor to ⟳ SYNC in Hearth.
+5. Delete = `{ "id": ..., "updatedAt": <now>, "deleted": true }`.
+6. Never lower an existing `updatedAt`; never omit it (a missing one is 0
+   and loses to any local copy).
+Rollout order matters once: install the v1.9.0 APK (it migrates the schema)
+and do one PUSH STATE before Claude publishes anything.
+
+Schema note: migration 5 is the day-sheet build's `tasks` + `kv` tables;
+migration 6 is sync's `events.deleted` + `settings`. They are separate on
+purpose, because a phone that already ran the day-sheet build sits at
+user_version 5 and would otherwise never receive the sync columns. Never
+reuse or renumber an applied migration.
+
+Ruling 8 (Hearth never writes forge-sync.json) is unaffected: hearth-sync
+is a separate private repo and a separate file.
 
 ## Punch list (settled with Connor — build in this order)
 

@@ -26,6 +26,7 @@ import DayDetail from './components/DayDetail';
 import EventModal from './components/EventModal';
 import SettingsModal from './components/SettingsModal';
 import { getPermissionStatus, refreshAllNotifications } from './lib/notifications';
+import { pullSync } from './lib/syncRunner';
 import { durationDays, addDaysISO, splitSeriesAt } from './lib/recurrence';
 
 // ─── ErrorBoundary catches render-phase crashes and shows the error ───
@@ -126,6 +127,15 @@ function AppContent() {
         setForge(f => ({ ...f, ...cached }));
       } catch { /* cache is best-effort */ }
       refreshForge(true);
+
+      // Pull Claude's published events on launch (no-op without a token).
+      // Runs after setReady so a network failure can never block startup.
+      try {
+        const res = await pullSync();
+        if (!res.skipped && res.changed) setEvents(await getAllEvents());
+      } catch (syncErr) {
+        console.log('[Hearth] Launch sync skipped:', syncErr?.message);
+      }
 
       // Rolling 90-day notification window: re-schedule on every launch so
       // reminders keep firing even if Settings is never opened again. Runs
@@ -429,6 +439,7 @@ function AppContent() {
         <SettingsModal
           onClose={() => setShowSettings(false)}
           onCategoriesChanged={refreshCategories}
+          onSynced={async () => { setEvents(await getAllEvents()); bumpNotifications(); }}
         />
       )}
     </View>
